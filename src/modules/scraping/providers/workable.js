@@ -1,33 +1,33 @@
-import fetch from 'node-fetch';
-import { extractTextFromHtml } from '../../../shared/http/fetch.js';
-import { saveJobSnapshot } from '../jobs.js';
-import { JOB_SOURCE_ADAPTER_VERSION } from '../../../adapters/job-source.js';
-import { parseJobText } from '../../../parser.js';
+import { createIngestionBudget } from "../../../shared/http/ingestion-budget.js";
+import { extractTextFromHtml } from "../../../shared/http/fetch.js";
+import { saveJobSnapshot } from "../jobs.js";
+import { JOB_SOURCE_ADAPTER_VERSION } from "../../../adapters/job-source.js";
+import { parseJobText } from "../../../parser.js";
 import {
   createAdapterHttpClient,
   createSnapshot,
   resolveAdapterRateLimit,
-} from '../adapters/common.js';
-import { getListingProviderToken } from '../provider-tokens.js';
+} from "../adapters/common.js";
+import { getListingProviderToken } from "../provider-tokens.js";
 
-const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
+const WORKABLE_BASE = "https://www.workable.com/api/accounts";
 const WORKABLE_BASE_HEADERS = Object.freeze({
-  'User-Agent': 'jobbot3000',
-  Accept: 'application/json',
+  "User-Agent": "jobbot3000",
+  Accept: "application/json",
 });
 const WORKABLE_RATE_LIMIT_MS = resolveAdapterRateLimit({
-  envVar: 'JOBBOT_WORKABLE_RATE_LIMIT_MS',
+  envVar: "JOBBOT_WORKABLE_RATE_LIMIT_MS",
   fallbackMs: 500,
 });
 
 const httpClient = createAdapterHttpClient({
-  provider: 'workable',
+  provider: "workable",
   headers: WORKABLE_BASE_HEADERS,
   rateLimitMs: WORKABLE_RATE_LIMIT_MS,
 });
 
 function sanitizeString(value) {
-  if (value == null) return '';
+  if (value == null) return "";
   const trimmed = String(value).trim();
   return trimmed;
 }
@@ -40,7 +40,7 @@ function normalizeToken(value) {
 
 function getWorkableToken(explicitToken) {
   if (explicitToken !== undefined) return normalizeToken(explicitToken);
-  const stored = getListingProviderToken('workable');
+  const stored = getListingProviderToken("workable");
   if (stored) return normalizeToken(stored);
   return normalizeToken(process.env.JOBBOT_WORKABLE_TOKEN);
 }
@@ -54,7 +54,7 @@ function buildWorkableHeaders(explicitToken) {
 function sanitizeHeadersForSnapshot(headers) {
   const sanitized = {};
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === 'authorization') continue;
+    if (key.toLowerCase() === "authorization") continue;
     sanitized[key] = value;
   }
   return sanitized;
@@ -63,7 +63,7 @@ function sanitizeHeadersForSnapshot(headers) {
 function normalizeAccountSlug(account) {
   const slug = sanitizeString(account);
   if (!slug) {
-    throw new Error('Workable account slug is required');
+    throw new Error("Workable account slug is required");
   }
   return slug;
 }
@@ -77,7 +77,7 @@ function resolveShortcode(job) {
   if (direct) return direct;
   const id = sanitizeString(job?.id);
   if (id) return id;
-  throw new Error('Workable job shortcode is required');
+  throw new Error("Workable job shortcode is required");
 }
 
 function buildJobDetailUrl(slug, shortcode) {
@@ -86,7 +86,7 @@ function buildJobDetailUrl(slug, shortcode) {
 
 function toPlainText(value) {
   const str = sanitizeString(value);
-  if (!str) return '';
+  if (!str) return "";
   return extractTextFromHtml(str);
 }
 
@@ -100,11 +100,11 @@ function collectSectionText(sections) {
   const parts = [];
   const entries = Array.isArray(sections)
     ? sections
-    : typeof sections === 'object'
+    : typeof sections === "object"
       ? Object.values(sections)
       : [];
   for (const section of entries) {
-    if (!section || typeof section !== 'object') continue;
+    if (!section || typeof section !== "object") continue;
     const title = sanitizeString(section.title);
     if (title) parts.push(title);
     appendPlain(parts, section.content ?? section.description ?? section.body);
@@ -134,25 +134,31 @@ function gatherDetailText(detail, job) {
     appendPlain(parts, detail?.summary);
     appendPlain(parts, job?.summary);
   }
-  return parts.filter(Boolean).join('\n\n');
+  return parts.filter(Boolean).join("\n\n");
 }
 
 function extractLocation(detail, job) {
   const attempt = (candidate) => {
-    if (!candidate) return '';
-    if (typeof candidate === 'string') return sanitizeString(candidate);
-    if (typeof candidate.location_str === 'string') return sanitizeString(candidate.location_str);
-    const fields = [candidate.city, candidate.state, candidate.region, candidate.country]
+    if (!candidate) return "";
+    if (typeof candidate === "string") return sanitizeString(candidate);
+    if (typeof candidate.location_str === "string")
+      return sanitizeString(candidate.location_str);
+    const fields = [
+      candidate.city,
+      candidate.state,
+      candidate.region,
+      candidate.country,
+    ]
       .map(sanitizeString)
       .filter(Boolean);
-    return fields.join(', ').trim();
+    return fields.join(", ").trim();
   };
   return (
     attempt(detail?.location) ||
     attempt(detail?.locations?.[0]) ||
     attempt(job?.location) ||
     attempt(job?.locations?.[0]) ||
-    ''
+    ""
   );
 }
 
@@ -166,7 +172,9 @@ function mergeParsedJob(parsed, job, detail) {
   if (!merged.title && title) merged.title = title;
   const location = extractLocation(detail, job);
   if (!merged.location && location) merged.location = location;
-  const employmentType = sanitizeString(detail?.employment_type || job?.employment_type);
+  const employmentType = sanitizeString(
+    detail?.employment_type || job?.employment_type,
+  );
   if (employmentType) merged.employmentType = employmentType;
   const department = sanitizeString(detail?.department || job?.department);
   if (department) merged.department = department;
@@ -192,7 +200,12 @@ function resolveCanonicalUrl({ job, detail, account, shortcode }) {
 }
 
 function selectFetchedAt(detail, job) {
-  const candidates = [detail?.updated_at, detail?.published_at, job?.updated_at, job?.published_at];
+  const candidates = [
+    detail?.updated_at,
+    detail?.published_at,
+    job?.updated_at,
+    job?.published_at,
+  ];
   for (const candidate of candidates) {
     const normalized = sanitizeString(candidate);
     if (normalized) return normalized;
@@ -202,19 +215,23 @@ function selectFetchedAt(detail, job) {
 
 export async function fetchWorkableJobs(
   account,
-  { fetchImpl = fetch, retry, headers, token } = {},
+  { budget = createIngestionBudget(), retry, headers, token } = {},
 ) {
+  budget.charge("pages");
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
   const requestHeaders = headers || buildWorkableHeaders(token);
   const payload = await httpClient.json(url, {
-    fetchImpl,
+    budget,
+    bodyKind: "list",
     retry,
     headers: requestHeaders,
     rateLimit: { key: `workable:${slug}` },
     onError: ({ response }) => {
       const statusLabel = `${response.status} ${response.statusText}`;
-      return new Error(`Failed to fetch Workable account ${slug}: ${statusLabel}`);
+      return new Error(
+        `Failed to fetch Workable account ${slug}: ${statusLabel}`,
+      );
     },
   });
   const jobsArray = Array.isArray(payload?.jobs)
@@ -224,33 +241,52 @@ export async function fetchWorkableJobs(
       : Array.isArray(payload?.results)
         ? payload.results
         : [];
+  budget.charge("jobs", jobsArray.length);
   return { account: slug, jobs: jobsArray };
 }
 
 async function toWorkableSnapshot(job, context) {
-  const { slug, fetchImpl = fetch, retry, headers, rateLimitKey, snapshotHeaders } =
-    context || {};
+  const {
+    slug,
+    budget = createIngestionBudget(),
+    retry,
+    headers,
+    rateLimitKey,
+    snapshotHeaders,
+  } = context || {};
   if (!slug) {
-    throw new Error('Workable account slug is required for snapshot normalization');
+    throw new Error(
+      "Workable account slug is required for snapshot normalization",
+    );
   }
   const shortcode = resolveShortcode(job);
   const detailUrl = buildJobDetailUrl(slug, shortcode);
   const detail = await httpClient.json(detailUrl, {
-    fetchImpl,
+    budget,
     headers,
     retry,
     rateLimit: { key: rateLimitKey },
     onError: ({ response }) => {
       const statusLabel = `${response.status} ${response.statusText}`;
-      return new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);
+      return new Error(
+        `Failed to fetch Workable job ${shortcode}: ${statusLabel}`,
+      );
     },
   });
   const raw = gatherDetailText(detail, job);
   const parsed = mergeParsedJob(parseJobText(raw), job, detail);
-  const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
-  const sanitizedHeaders = snapshotHeaders || sanitizeHeadersForSnapshot(headers || {});
+  const canonicalUrl = resolveCanonicalUrl({
+    job,
+    detail,
+    account: slug,
+    shortcode,
+  });
+  const sanitizedHeaders = sanitizeHeadersForSnapshot(
+    snapshotHeaders || headers || {},
+  );
+  budget.check();
   return createSnapshot({
-    provider: 'workable',
+    provider: "workable",
     url: canonicalUrl,
     raw,
     parsed,
@@ -260,18 +296,28 @@ async function toWorkableSnapshot(job, context) {
 }
 
 export const workableAdapter = {
-  provider: 'workable',
+  provider: "workable",
   version: JOB_SOURCE_ADAPTER_VERSION,
-  async listOpenings({ account, fetchImpl = fetch, retry, token } = {}) {
+  async listOpenings({
+    account,
+    budget = createIngestionBudget(),
+    retry,
+    token,
+  } = {}) {
     const headers = buildWorkableHeaders(token);
-    const result = await fetchWorkableJobs(account, { fetchImpl, retry, headers, token });
+    const result = await fetchWorkableJobs(account, {
+      budget,
+      retry,
+      headers,
+      token,
+    });
     const rateLimitKey = `workable:${result.account}`;
     const snapshotHeaders = sanitizeHeadersForSnapshot(headers);
     return {
       jobs: result.jobs,
       context: {
         slug: result.account,
-        fetchImpl,
+        budget,
         retry,
         headers,
         rateLimitKey,
@@ -287,14 +333,30 @@ export const workableAdapter = {
   },
 };
 
-export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
-  const { jobs, context } = await workableAdapter.listOpenings({ account, fetchImpl, retry });
+export async function ingestWorkableBoard({
+  account,
+  budget = createIngestionBudget(),
+  retry,
+} = {}) {
+  const { jobs, context } = await workableAdapter.listOpenings({
+    account,
+    budget,
+    retry,
+  });
   const jobIds = [];
 
-  for (const job of jobs) {
-    const snapshot = await workableAdapter.normalizeJob(job, context);
-    await saveJobSnapshot(snapshot);
-    jobIds.push(snapshot.id);
+  try {
+    for (const job of jobs) {
+      const snapshot = await workableAdapter.normalizeJob(job, context);
+      budget.check();
+      budget.progress.completed++;
+      await saveJobSnapshot(snapshot);
+      budget.progress.saved++;
+      budget.progress.jobIds.push(snapshot.id);
+      jobIds.push(snapshot.id);
+    }
+  } catch (error) {
+    throw budget.annotate(error);
   }
 
   return { account: context.slug, saved: jobIds.length, jobIds };

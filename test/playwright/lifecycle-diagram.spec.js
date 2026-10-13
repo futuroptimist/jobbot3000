@@ -970,15 +970,24 @@ test.describe("Application Lifecycle Diagram", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
     await page.getByRole("button", { name: "Diagram", exact: true }).click();
-    await waitForDiagramIdle(page);
+    // Visibility changes queue an 80 ms ResizeObserver debounce before the
+    // render advertises its busy state. Let that callback run before waiting
+    // for the complete worker-backed render, on both visits.
+    await page.waitForTimeout(200);
+    await waitForLifecycleCapture(page);
     const svg = page.locator(".diagram-scroll svg");
+    // Use the same fully visible capture position on each visit: fractional
+    // SVG bounds at the viewport edge otherwise clip the last raster row.
+    await svg.evaluate((el) => el.scrollIntoView({ block: "center" }));
     const before = await svg.screenshot({ animations: "disabled" });
     await page.getByRole("button", { name: "Dashboard", exact: true }).click();
     // Let the hidden tab's ResizeObserver debounce run, as it does when a
     // person spends time elsewhere or CI takes longer between input calls.
     await page.waitForTimeout(200);
     await page.getByRole("button", { name: "Diagram", exact: true }).click();
-    await waitForDiagramIdle(page);
+    await page.waitForTimeout(200);
+    await waitForLifecycleCapture(page);
+    await svg.evaluate((el) => el.scrollIntoView({ block: "center" }));
     expect(await svg.screenshot({ animations: "disabled" })).toEqual(before);
     await expect(svg).toHaveAttribute("data-reduced-motion", "true");
     await expect(page.locator(".diagram-scale-note")).toContainText(

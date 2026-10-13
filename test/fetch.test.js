@@ -1,27 +1,97 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-
-vi.mock('node-fetch', async () => {
-  const actual = await vi.importActual('node-fetch');
-  return { ...actual, default: vi.fn() };
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { Headers } from "node-fetch";
+// The fixture replaces internal resolver/socket primitives, never a production fetch option.
+vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  const { EventEmitter } = await import("node:events");
+  const { Readable } = await import("node:stream");
+  const exchange = vi.fn();
+  const lookup = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+  function socket(event, fields) {
+    const value = Object.assign(new EventEmitter(), fields, {
+      destroyed: false,
+    });
+    value.destroy = () => {
+      value.destroyed = true;
+      value.emit("close");
+    };
+    Promise.resolve().then(() => {
+      if (!value.destroyed) value.emit(event);
+    });
+    return value;
+  }
+  const requestPublic = actual.createPublicTransport({
+    resolve: lookup,
+    tcp: (options) =>
+      socket("connect", {
+        remoteAddress: options.host,
+        remotePort: options.port,
+      }),
+    secure: (options) =>
+      socket("secureConnect", {
+        authorized: true,
+        getPeerCertificate: () => ({
+          subjectaltname: `DNS:${options.servername}`,
+        }),
+      }),
+    request: (url, options, receive) => {
+      const req = new EventEmitter();
+      const controller = new AbortController();
+      req.destroy = () => {
+        controller.abort();
+        req.emit("close");
+      };
+      req.end = () => {
+        Promise.resolve()
+          .then(() =>
+            exchange(url.href, { ...options, signal: controller.signal }),
+          )
+          .then((result) => {
+            if (controller.signal.aborted) return;
+            const response = Readable.from(
+              (async function* () {
+                if (result.body !== undefined) yield Buffer.from(result.body);
+                else if (result.text) yield Buffer.from(await result.text());
+                else if (result.json)
+                  yield Buffer.from(JSON.stringify(await result.json()));
+              })(),
+            );
+            response.statusCode = result.status ?? 200;
+            response.statusMessage = result.statusText ?? "OK";
+            response.complete = true;
+            response.rawHeaders = result.rawHeaders ?? [];
+            if (result.headers?.get) {
+              for (const key of [
+                "content-type",
+                "etag",
+                "last-modified",
+                "location",
+              ]) {
+                const value = result.headers.get(key);
+                if (value) response.rawHeaders.push(key, value);
+              }
+            }
+            receive(response);
+          })
+          .catch((error) => req.emit("error", error));
+      };
+      return req;
+    },
+  });
+  return { ...actual, requestPublic, exchange, lookup };
 });
-vi.mock('node:dns/promises', () => {
-  const lookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
-  return { default: { lookup }, lookup };
-});
-
-import fetch, { Headers } from 'node-fetch';
-import dns from 'node:dns/promises';
 import {
-  DEFAULT_TIMEOUT_MS,
+  exchange as fetch,
+  lookup,
+} from "../src/shared/http/direct-transport.js";
+
+import {
   extractTextFromHtml,
   fetchTextFromUrl,
-  fetchWithRetry,
-  setFetchRateLimit,
   clearFetchRateLimits,
-} from '../src/fetch.js';
-
-describe('extractTextFromHtml', () => {
-  it('collapses whitespace and skips non-content tags', () => {
+} from "../src/fetch.js";
+describe("extractTextFromHtml", () => {
+  it("collapses whitespace and skips non-content tags", () => {
     const html = `
       <html>
         <head>
@@ -36,10 +106,10 @@ describe('extractTextFromHtml', () => {
         </body>
       </html>
     `;
-    expect(extractTextFromHtml(html)).toBe('First line Second line');
+    expect(extractTextFromHtml(html)).toBe("First line Second line");
   });
 
-  it('omits aside content', () => {
+  it("omits aside content", () => {
     const html = `
       <html>
         <body>
@@ -48,10 +118,10 @@ describe('extractTextFromHtml', () => {
         </body>
       </html>
     `;
-    expect(extractTextFromHtml(html)).toBe('Main');
+    expect(extractTextFromHtml(html)).toBe("Main");
   });
 
-  it('omits header content', () => {
+  it("omits header content", () => {
     const html = `
       <html>
         <body>
@@ -60,10 +130,10 @@ describe('extractTextFromHtml', () => {
         </body>
       </html>
     `;
-    expect(extractTextFromHtml(html)).toBe('Main');
+    expect(extractTextFromHtml(html)).toBe("Main");
   });
 
-  it('omits noscript content', () => {
+  it("omits noscript content", () => {
     const html = `
       <html>
         <body>
@@ -72,698 +142,224 @@ describe('extractTextFromHtml', () => {
         </body>
       </html>
     `;
-    expect(extractTextFromHtml(html)).toBe('Main');
+    expect(extractTextFromHtml(html)).toBe("Main");
   });
 
-  it('includes img alt text without src', () => {
+  it("includes img alt text without src", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+    expect(extractTextFromHtml(html)).toBe("Start Logo End");
   });
 
-  it('includes img aria-label when alt is missing', () => {
+  it("includes img aria-label when alt is missing", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" aria-label="Logo" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+    expect(extractTextFromHtml(html)).toBe("Start Logo End");
   });
 
-  it('omits img when aria-hidden is true', () => {
+  it("omits img when aria-hidden is true", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden="true" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img without alt text', () => {
+  it("omits img without alt text", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when aria-hidden is true', () => {
+  it("omits img alt text when aria-hidden is true", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden="true" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when aria-hidden uses uppercase true', () => {
+  it("omits img alt text when aria-hidden uses uppercase true", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden="TRUE" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when aria-hidden uses numeric true', () => {
+  it("omits img alt text when aria-hidden uses numeric true", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden="1" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when aria-hidden is present without a value', () => {
+  it("omits img alt text when aria-hidden is present without a value", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when role is presentation', () => {
+  it("omits img alt text when role is presentation", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" role="presentation" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('omits img alt text when role casing varies', () => {
+  it("omits img alt text when role casing varies", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Decorative" role="Presentation" />
       <img src="logo.png" alt="Another" role="None" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe("Start End");
   });
 
-  it('includes img alt text when aria-hidden is false-like', () => {
+  it("includes img alt text when aria-hidden is false-like", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="Logo" aria-hidden="FALSE" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+    expect(extractTextFromHtml(html)).toBe("Start Logo End");
   });
 
-  it('includes aria-label text when alt is missing', () => {
+  it("includes aria-label text when alt is missing", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" aria-label="Logo" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+    expect(extractTextFromHtml(html)).toBe("Start Logo End");
   });
 
-  it('falls back to aria-label when alt text is whitespace', () => {
+  it("falls back to aria-label when alt text is whitespace", () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" alt="   " aria-label=" Logo " />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+    expect(extractTextFromHtml(html)).toBe("Start Logo End");
   });
 
-  it('returns empty string for falsy input', () => {
-    expect(extractTextFromHtml('')).toBe('');
+  it("returns empty string for falsy input", () => {
+    expect(extractTextFromHtml("")).toBe("");
     // @ts-expect-error testing null input
-    expect(extractTextFromHtml(null)).toBe('');
+    expect(extractTextFromHtml(null)).toBe("");
     // @ts-expect-error testing undefined input
-    expect(extractTextFromHtml()).toBe('');
+    expect(extractTextFromHtml()).toBe("");
   });
 });
 
-describe('fetchTextFromUrl', () => {
-  afterEach(() => {
-    fetch.mockReset();
-    dns.lookup.mockClear();
-    clearFetchRateLimits();
-    delete process.env.JOBBOT_OFFLINE;
-  });
-
-  it('rejects network requests when JOBBOT_OFFLINE is set', async () => {
-    process.env.JOBBOT_OFFLINE = '1';
-    const fetchImpl = vi.fn();
-
-    await expect(
-      fetchTextFromUrl('http://example.com', { fetchImpl }),
-    ).rejects.toThrow('Offline mode enabled');
-
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(dns.lookup).not.toHaveBeenCalled();
-  });
-
-  it('rejects network requests for additional truthy JOBBOT_OFFLINE values', async () => {
-    const truthyValues = ['true', 'yes', 'on', 'enabled'];
-
-    for (const value of truthyValues) {
+afterEach(() => {
+  fetch.mockReset();
+  lookup.mockClear();
+  clearFetchRateLimits();
+  delete process.env.JOBBOT_OFFLINE;
+  vi.useRealTimers();
+});
+describe("public text ingestion", () => {
+  it.each(["1", "true", "yes", "on", "enabled"])(
+    "offline %s makes no resolver calls",
+    async (value) => {
       process.env.JOBBOT_OFFLINE = value;
-      const fetchImpl = vi.fn();
-
       await expect(
-        fetchTextFromUrl('http://example.com', { fetchImpl }),
-      ).rejects.toThrow('Offline mode enabled');
-
-      expect(fetchImpl).not.toHaveBeenCalled();
-      expect(dns.lookup).not.toHaveBeenCalled();
-      delete process.env.JOBBOT_OFFLINE;
-    }
-  });
-
-  it('allows network requests for falsy JOBBOT_OFFLINE values', async () => {
-    const falsyValues = ['0', 'false', 'off', 'disabled', ''];
-
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
-    });
-
-    for (const value of falsyValues) {
+        fetchTextFromUrl("https://example.test"),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      expect(lookup).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["0", "false", "off", "disabled", ""])(
+    "falsy offline %s permits bounded text",
+    async (value) => {
       process.env.JOBBOT_OFFLINE = value;
-      await expect(fetchTextFromUrl('http://example.com')).resolves.toBe('ok');
-      expect(fetch).toHaveBeenCalled();
-      fetch.mockClear();
-    }
-  });
-  it('returns extracted text for HTML responses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/html' },
-      text: () => Promise.resolve('<p>Hello</p>')
-    });
-    const text = await fetchTextFromUrl('http://example.com');
-    expect(text).toBe('Hello');
-  });
-
-  it('returns plain text for non-HTML responses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('  hi  ')
-    });
-    const text = await fetchTextFromUrl('http://example.com');
-    expect(text).toBe('hi');
-  });
-
-  it('handles missing content-type header as plain text', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => null },
-      text: () => Promise.resolve('  hi  ')
-    });
-    const text = await fetchTextFromUrl('http://example.com');
-    expect(text).toBe('hi');
-  });
-
-  it('throws on HTTP errors', async () => {
-    fetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: 'Server Error',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('error')
-    });
-    await expect(fetchTextFromUrl('http://example.com'))
-      .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
-  });
-
-  it('propagates network errors', async () => {
-    fetch.mockRejectedValue(new Error('network down'));
-    await expect(fetchTextFromUrl('http://example.com')).rejects.toThrow('network down');
-  });
-
-  it('aborts when the fetch exceeds the timeout', async () => {
-    vi.useFakeTimers();
-    fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
-        signal.addEventListener('abort', () => reject(signal.reason));
+      fetch.mockResolvedValue({ body: "  synthetic  " });
+      expect(await fetchTextFromUrl("https://example.test")).toBe("synthetic");
+    },
+  );
+  it("converts HTML after the complete body and trims plain/missing-type text", async () => {
+    fetch
+      .mockResolvedValueOnce({
+        body: '<p>Synthetic <img alt="label"></p>',
+        headers: new Headers({ "content-type": "text/html" }),
       })
+      .mockResolvedValue({ body: " text " });
+    expect(await fetchTextFromUrl("https://example.test")).toBe(
+      "Synthetic label",
     );
-    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: 50 });
-    vi.advanceTimersByTime(50);
-    await expect(promise).rejects.toThrow('Timeout after 50ms');
-    vi.useRealTimers();
+    expect(await fetchTextFromUrl("https://example.test")).toBe("text");
   });
-
-  it('falls back to default timeout when given NaN', async () => {
-    vi.useFakeTimers();
-    fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
-        signal.addEventListener('abort', () => reject(signal.reason));
-      })
-    );
-    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: Number('foo') });
-    vi.advanceTimersByTime(DEFAULT_TIMEOUT_MS);
-    await expect(promise).rejects.toThrow(`Timeout after ${DEFAULT_TIMEOUT_MS}ms`);
-    vi.useRealTimers();
-  });
-
-  it('forwards headers to fetch', async () => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
+  it.each([
+    { headers: { "X-Synthetic": "one" } },
+    { headers: new Headers({ "X-Synthetic": "one" }) },
+    { headers: [["X-Synthetic", "one"]] },
+  ])("preserves object/Headers/iterable input %j", async ({ headers }) => {
+    fetch.mockResolvedValue({ body: "ok" });
+    await fetchTextFromUrl("HTTP://example.test", { headers });
+    expect(fetch.mock.calls[0][1].headers).toMatchObject({
+      "user-agent": "jobbot3000",
+      "x-synthetic": "one",
     });
-    await fetchTextFromUrl('http://example.com', {
-      headers: { 'User-Agent': 'jobbot' },
+  });
+  it("honors an explicit case-insensitive user agent", async () => {
+    fetch.mockResolvedValue({ body: "ok" });
+    await fetchTextFromUrl("http://example.test", {
+      headers: { "user-agent": "synthetic" },
     });
-    expect(fetch).toHaveBeenCalledWith(
-      'http://example.com',
-      expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
-    );
+    expect(fetch.mock.calls[0][1].headers["user-agent"]).toBe("synthetic");
   });
-
-  it('sends a default User-Agent header when none provided', async () => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
-    });
-
-    await fetchTextFromUrl('http://example.com');
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://example.com',
-      expect.objectContaining({
-        headers: expect.objectContaining({ 'User-Agent': 'jobbot3000' }),
-      })
-    );
-  });
-
-  it('preserves iterable headers when adding the default User-Agent', async () => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
-    });
-
-    const original = new Headers();
-    original.set('Authorization', 'Bearer token');
-
-    await fetchTextFromUrl('http://example.com', { headers: original });
-
-    const [, { headers }] = fetch.mock.calls.at(-1);
-    expect(headers).toBeInstanceOf(Headers);
-    expect(headers.get('Authorization')).toBe('Bearer token');
-    expect(headers.get('User-Agent')).toBe('jobbot3000');
-  });
-
-  it('rejects non-http/https URLs', async () => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('file:///etc/passwd'))
-      .rejects.toThrow('Unsupported protocol: file:');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects localhost hostnames', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://localhost/admin'))
-      .rejects.toThrow('Refusing to fetch private address: localhost');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects loopback IPv4 addresses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://127.0.0.1/hidden'))
-      .rejects.toThrow('Refusing to fetch private address: 127.0.0.1');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects canonical IPv6 loopback addresses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://[::1]/hidden'))
-      .rejects.toThrow('Refusing to fetch private address: ::1');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects alternate IPv6 loopback spellings', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://[0:0:0:0:0:0:0:1]/hidden'))
-      .rejects.toThrow(/Refusing to fetch private address: ::1/);
-    await expect(fetchTextFromUrl('http://[::01]/hidden'))
-      .rejects.toThrow(/Refusing to fetch private address: ::1/);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects broader IPv6 link-local ranges', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://[fe90::1]/hidden'))
-      .rejects.toThrow('Refusing to fetch private address: fe90::1');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects unique local IPv6 ranges', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://[fd12:3456:789a::1]/hidden'))
-      .rejects.toThrow('Refusing to fetch private address: fd12:3456:789a::1');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects IPv4-mapped loopback addresses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('secret'),
-    });
-    await expect(fetchTextFromUrl('http://[::ffff:127.0.0.1]/hidden'))
-      .rejects.toThrow(/Refusing to fetch private address: ::ffff:(127\.0\.0\.1|7f00:1)/);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects hostnames that resolve to private addresses', async () => {
-    dns.lookup.mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }]);
-
-    await expect(fetchTextFromUrl('http://internal.example'))
-      .rejects.toThrow(
-        'Refusing to fetch private address: 127.0.0.1 (resolved from internal.example)'
-      );
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects nip.io hostnames that point to private IPv4 addresses', async () => {
-    await expect(fetchTextFromUrl('http://127.0.0.1.nip.io/hidden'))
-      .rejects.toThrow('Refusing to fetch private address: 127.0.0.1.nip.io');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('allows nip.io hostnames that point to public IPv4 addresses', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('public'),
-    });
-    dns.lookup.mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }]);
-
-    const text = await fetchTextFromUrl('http://8.8.8.8.nip.io/status');
-    expect(text).toBe('public');
-  });
-
-  it('allows uppercase HTTP protocol', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
-    });
-    const text = await fetchTextFromUrl('HTTP://example.com');
-    expect(text).toBe('ok');
-  });
-
-  it('limits response size to 1MB by default', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok'),
-    });
-    await fetchTextFromUrl('http://example.com');
-    expect(fetch).toHaveBeenCalledWith(
-      'http://example.com',
-      expect.objectContaining({ size: 1024 * 1024 })
-    );
-  });
-
-  it('rejects when response exceeds maxBytes', async () => {
-    fetch.mockRejectedValue(
-      Object.assign(new Error('max size exceeded'), { type: 'max-size' })
-    );
+  it("rejects invalid timeouts rather than making them unlimited", async () => {
     await expect(
-      fetchTextFromUrl('http://example.com', { maxBytes: 5 })
-    ).rejects.toThrow('Response exceeded 5 bytes');
+      fetchTextFromUrl("https://example.test", { timeoutMs: NaN }),
+    ).rejects.toMatchObject({ code: "URL_POLICY" });
+    expect(fetch).not.toHaveBeenCalled();
   });
-
-  it('serializes requests per host so fetches run sequentially', async () => {
-    const resolvers = [];
-    fetch.mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolvers.push(resolve);
-        })
-    );
-
-    const first = fetchTextFromUrl('http://example.com/one');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-
-    const second = fetchTextFromUrl('http://example.com/two');
-    await Promise.resolve();
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('first'),
-    });
-
-    await expect(first).resolves.toBe('first');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('second'),
-    });
-
-    await expect(second).resolves.toBe('second');
+  it("keeps the existing one MiB default and allows smaller byte limits", async () => {
+    fetch.mockResolvedValue({ body: Buffer.alloc(1024 * 1024 + 1) });
+    await expect(
+      fetchTextFromUrl("https://example.test"),
+    ).rejects.toMatchObject({ code: "BODY_LIMIT" });
+    fetch.mockResolvedValue({ body: "12345" });
+    await expect(
+      fetchTextFromUrl("https://example.test", { maxBytes: 4 }),
+    ).rejects.toMatchObject({ code: "BODY_LIMIT" });
   });
-
-  it('allows concurrent requests across different hosts', async () => {
-    const resolvers = [];
-    fetch.mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolvers.push(resolve);
-        })
-    );
-
-    const first = fetchTextFromUrl('http://one.example.com/path');
-    const second = fetchTextFromUrl('http://two.example.com/path');
-
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('one'),
-    });
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('two'),
-    });
-
-    await expect(first).resolves.toBe('one');
-    await expect(second).resolves.toBe('two');
+  it("never uses an arbitrary fetch implementation", async () => {
+    const injected = vi.fn();
+    await expect(
+      fetchTextFromUrl("https://example.test", { fetchImpl: injected }),
+    ).rejects.toMatchObject({ code: "URL_POLICY" });
+    expect(injected).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
   });
-
-  it('resumes queued work after an aborted fetch timeout', async () => {
-    const pending = [];
-    fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
-        pending.push({ resolve, reject });
-        signal.addEventListener('abort', () => reject(signal.reason));
-      })
-    );
-
-    const first = fetchTextFromUrl('http://example.com/slow', { timeoutMs: 10 });
-    const firstErrorPromise = first.catch(err => err);
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(pending).toHaveLength(1);
-
-    const second = fetchTextFromUrl('http://example.com/fast', { timeoutMs: 10 });
-    await Promise.resolve();
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    const firstError = await firstErrorPromise;
-    expect(firstError).toBeInstanceOf(Error);
-    expect(firstError.message).toBe('Timeout after 10ms');
-
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    expect(pending).toHaveLength(2);
-
-    pending[1].resolve({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('done'),
-    });
-
-    await expect(second).resolves.toBe('done');
-  });
-
-  it('delays queued requests until the rate limit interval elapses', async () => {
-    vi.useFakeTimers();
-    setFetchRateLimit('http://example.com', 200);
-
-    const resolvers = [];
-    fetch.mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolvers.push(resolve);
-        })
-    );
-
-    const first = fetchTextFromUrl('http://example.com/one');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('first'),
-    });
-    await expect(first).resolves.toBe('first');
-
-    const second = fetchTextFromUrl('http://example.com/two');
-    await Promise.resolve();
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(199);
-    await Promise.resolve();
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(1);
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-
-    resolvers.shift()({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('second'),
-    });
-
-    await expect(second).resolves.toBe('second');
-    vi.useRealTimers();
-  });
-});
-
-describe('fetchWithRetry', () => {
-  afterEach(() => {
-    fetch.mockReset();
-  });
-
-  it('retries failed responses that qualify as transient', async () => {
-    fetch
-      .mockResolvedValueOnce({ ok: false, status: 502, statusText: 'Bad Gateway' })
-      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK' });
-
-    const response = await fetchWithRetry('https://example.com', {
-      fetchImpl: fetch,
-      retry: { retries: 1, delayMs: 0 },
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(response.ok).toBe(true);
-  });
-
-  it('retries when fetch throws before succeeding', async () => {
-    fetch
-      .mockRejectedValueOnce(new Error('network reset'))
-      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK' });
-
-    const response = await fetchWithRetry('https://example.com/retry', {
-      fetchImpl: fetch,
-      retry: { retries: 2, delayMs: 0 },
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(response.ok).toBe(true);
-  });
-
-  it('stops retrying on non-retriable responses', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
-
-    const response = await fetchWithRetry('https://example.com/not-found', {
-      fetchImpl: fetch,
-      retry: { retries: 3, delayMs: 0 },
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(response.status).toBe(404);
+  it("reports HTTP failures without query or response content", async () => {
+    fetch.mockResolvedValue({ status: 404, body: "synthetic-private-body" });
+    const error = await fetchTextFromUrl(
+      "https://example.test/?opaque=synthetic-private-query",
+    ).catch((error) => error);
+    expect(error.code).toBe("HTTP_STATUS");
+    expect(String(error)).not.toContain("synthetic-private");
   });
 });

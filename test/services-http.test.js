@@ -1,137 +1,141 @@
-import { Response } from 'node-fetch';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import * as fetchModule from '../src/fetch.js';
-import { createHttpClient } from '../src/services/http.js';
-
-describe('createHttpClient', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Headers, Response } from "node-fetch";
+// The fixture replaces internal resolver/socket primitives, never a production fetch option.
+vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  const { EventEmitter } = await import("node:events");
+  const { Readable } = await import("node:stream");
+  const exchange = vi.fn();
+  const lookup = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+  function socket(event, fields) {
+    const value = Object.assign(new EventEmitter(), fields, {
+      destroyed: false,
+    });
+    value.destroy = () => {
+      value.destroyed = true;
+      value.emit("close");
+    };
+    Promise.resolve().then(() => {
+      if (!value.destroyed) value.emit(event);
+    });
+    return value;
+  }
+  const requestPublic = actual.createPublicTransport({
+    resolve: lookup,
+    tcp: (options) =>
+      socket("connect", {
+        remoteAddress: options.host,
+        remotePort: options.port,
+      }),
+    secure: (options) =>
+      socket("secureConnect", {
+        authorized: true,
+        getPeerCertificate: () => ({
+          subjectaltname: `DNS:${options.servername}`,
+        }),
+      }),
+    request: (url, options, receive) => {
+      const req = new EventEmitter();
+      const controller = new AbortController();
+      req.destroy = () => {
+        controller.abort();
+        req.emit("close");
+      };
+      req.end = () => {
+        Promise.resolve()
+          .then(() =>
+            exchange(url.href, { ...options, signal: controller.signal }),
+          )
+          .then((result) => {
+            if (controller.signal.aborted) return;
+            const response = Readable.from(
+              (async function* () {
+                if (result.body !== undefined) yield Buffer.from(result.body);
+                else if (result.text) yield Buffer.from(await result.text());
+                else if (result.json)
+                  yield Buffer.from(JSON.stringify(await result.json()));
+              })(),
+            );
+            response.statusCode = result.status ?? 200;
+            response.statusMessage = result.statusText ?? "OK";
+            response.complete = true;
+            response.rawHeaders = result.rawHeaders ?? [];
+            if (result.headers?.get) {
+              for (const key of [
+                "content-type",
+                "etag",
+                "last-modified",
+                "location",
+              ]) {
+                const value = result.headers.get(key);
+                if (value) response.rawHeaders.push(key, value);
+              }
+            }
+            receive(response);
+          })
+          .catch((error) => req.emit("error", error));
+      };
+      return req;
+    },
   });
+  return { ...actual, requestPublic, exchange, lookup };
+});
+import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
-  it('merges default headers, applies rate limits, and parses JSON responses', async () => {
-    const fetchImpl = vi.fn(async (_url, init) => {
-      expect(init.headers).toMatchObject({
-        'User-Agent': 'jobbot3000',
-        Accept: 'application/json',
-        Authorization: 'Bearer token',
-      });
-
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-
-    const setRateLimitSpy = vi
-      .spyOn(fetchModule, 'setFetchRateLimit')
-      .mockImplementation(() => {});
-
+import { createHttpClient } from "../src/services/http.js";
+import { clearFetchRateLimits } from "../src/fetch.js";
+afterEach(() => {
+  fetch.mockReset();
+  clearFetchRateLimits();
+  vi.useRealTimers();
+});
+describe("createHttpClient", () => {
+  it("merges header forms and returns genuine Responses", async () => {
+    fetch.mockResolvedValue({ body: '{"ok":true}' });
     const client = createHttpClient({
-      provider: 'ashby',
-      defaultHeaders: { Accept: 'application/json' },
-      defaultRateLimitMs: 750,
-    });
-
-    const payload = await client.json('https://api.example.com/jobs', {
-      fetchImpl,
-      rateLimit: { key: 'ashby:example', lastInvokedAt: '2025-01-01T00:00:00Z' },
-      headers: { Authorization: 'Bearer token' },
-    });
-
-    expect(payload).toEqual({ ok: true });
-    expect(setRateLimitSpy).toHaveBeenCalledWith(
-      'ashby:example',
-      750,
-      expect.objectContaining({ lastInvokedAt: '2025-01-01T00:00:00Z' }),
-    );
-
-    const fetchOptions = fetchImpl.mock.calls[0][1];
-    expect(fetchOptions.signal).toBeDefined();
-    expect(fetchOptions.signal.aborted).toBe(false);
-  });
-
-  it('aborts requests that exceed the configured timeout', async () => {
-    const client = createHttpClient({
-      provider: 'test',
-      defaultTimeoutMs: 20,
+      provider: "synthetic",
+      defaultHeaders: { Accept: "application/json" },
       defaultRateLimitMs: 0,
     });
-
-    const fetchImpl = vi.fn(
-      (_url, init) =>
-        new Promise((_, reject) => {
-          if (init.signal) {
-            init.signal.addEventListener(
-              'abort',
-              () => {
-                const reason = init.signal.reason;
-                if (reason instanceof Error) {
-                  reject(reason);
-                } else {
-                  reject(new Error('aborted'));
-                }
-              },
-              { once: true },
-            );
-          }
-        }),
-    );
-
-    await expect(
-      client.request('https://slow.example.com/data', {
-        fetchImpl,
-        timeoutMs: 5,
-        retry: { retries: 0 },
-      }),
-    ).rejects.toMatchObject({
-      name: 'TimeoutError',
-      message: 'Request timed out after 5 ms',
-    });
-
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it('provides a get helper that issues GET requests with merged headers', async () => {
-    const fetchImpl = vi.fn(async (_url, init) => {
-      expect(init.method).toBe('GET');
-      return new Response('ok', {
-        status: 200,
-        headers: { 'content-type': 'text/plain' },
+    for (const headers of [
+      { Authorization: "Bearer synthetic" },
+      new Headers({ Authorization: "Bearer synthetic" }),
+      [["Authorization", "Bearer synthetic"]],
+    ]) {
+      const response = await client.request("https://example.test", {
+        headers,
       });
+      expect(response).toBeInstanceOf(Response);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(fetch.mock.lastCall[1].headers).toMatchObject({
+        "user-agent": "jobbot3000",
+        accept: "application/json",
+        authorization: "Bearer synthetic",
+      });
+    }
+  });
+  it("keeps the caller cancellation and timeout active through body delivery", async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation(() => new Promise(() => {}));
+    const client = createHttpClient({ defaultTimeoutMs: 20 });
+    const pending = client
+      .request("https://example.test")
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(20);
+    expect((await pending).code).toBe("DEADLINE");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("provides GET and JSON helpers with bounded parse errors", async () => {
+    fetch
+      .mockResolvedValueOnce({ body: '{"ok":true}' })
+      .mockResolvedValueOnce({ body: "invalid json" });
+    const client = createHttpClient();
+    expect(await (await client.get("https://example.test")).json()).toEqual({
+      ok: true,
     });
-
-    const setRateLimitSpy = vi
-      .spyOn(fetchModule, 'setFetchRateLimit')
-      .mockImplementation(() => {});
-
-    const client = createHttpClient({
-      provider: 'lever',
-      defaultHeaders: { Accept: 'application/json' },
-      defaultRateLimitMs: 500,
+    expect(fetch.mock.calls[0][1].method).toBe("GET");
+    await expect(client.json("https://example.test")).rejects.toMatchObject({
+      code: "PAYLOAD_INVALID",
     });
-
-    const response = await client.get('https://api.example.com/status', {
-      fetchImpl,
-      rateLimit: { key: 'lever:example' },
-      headers: { Authorization: 'Bearer token' },
-    });
-
-    expect(response).toBeInstanceOf(Response);
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.example.com/status',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          Accept: 'application/json',
-          Authorization: 'Bearer token',
-        }),
-      }),
-    );
-    expect(setRateLimitSpy).toHaveBeenCalledWith(
-      'lever:example',
-      500,
-      expect.any(Object),
-    );
   });
 });
