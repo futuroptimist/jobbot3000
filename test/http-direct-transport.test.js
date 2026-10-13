@@ -674,4 +674,26 @@ describe("direct transport without real networking", () => {
     expect((await h.run("https://example.test")).status).toBe(600);
     expect(h.request).toHaveBeenCalledTimes(1);
   });
+  it("checks cancellation after resource closure", async () => {
+    const controller = new AbortController();
+    const h = harness({
+      tcp: (options) => {
+        const socket = fakeSocket("connect", {
+          remoteAddress: options.host,
+          remotePort: options.port,
+        });
+        socket.destroy = vi.fn(() => {
+          if (socket.destroyed) return;
+          socket.destroyed = true;
+          controller.abort();
+          socket.emit("close");
+        });
+        return socket;
+      },
+    });
+    await expect(
+      h.run("http://example.test", { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "DEADLINE" });
+    expect(h.sockets.every((socket) => socket.destroyed)).toBe(true);
+  });
 });

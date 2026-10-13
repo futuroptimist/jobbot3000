@@ -632,6 +632,7 @@ export function createPublicTransport({
               if (rate) rate.last = Date.now();
               releaseOrigin();
             }
+            owner.check();
             if ([301, 302, 303, 307, 308].includes(result.status)) {
               const location = result.headers.get("location");
               if (!location || redirects >= limits.redirects) {
