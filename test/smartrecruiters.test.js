@@ -85,6 +85,8 @@ vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
 });
 import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
+import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
+
 const JOBS_DIR = "jobs";
 
 describe("SmartRecruiters ingest", () => {
@@ -104,6 +106,17 @@ describe("SmartRecruiters ingest", () => {
       dataDir = undefined;
     }
     delete process.env.JOBBOT_DATA_DIR;
+  });
+
+  it("accepts a reduced request budget without an explicit timeout", async () => {
+    const { fetchSmartRecruitersPostings } = await import(
+      "../src/smartrecruiters.js"
+    );
+    const budget = createIngestionBudget({ limits: { requestMs: 100 } });
+    fetch.mockResolvedValue({ body: '{"content":[],"totalFound":0}' });
+    await fetchSmartRecruitersPostings("budget-example", { budget });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(budget.counts.attempts).toBe(1);
   });
 
   it("fetches SmartRecruiters jobs and writes snapshots", async () => {

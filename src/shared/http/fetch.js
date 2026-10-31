@@ -41,11 +41,10 @@ async function withHostQueue(url, options = {}, init = {}) {
   }
   const failure = () => {
     if (!(circuit?.threshold > 0)) return;
-    const state = entry ?? { failures: 0, openUntil: 0 };
+    const state = CIRCUIT_BREAKERS.get(key) ?? { failures: 0, openUntil: 0 };
     state.failures++;
     if (state.failures >= circuit.threshold)
       state.openUntil = clock() + (circuit.resetMs ?? 30000);
-    entry = state;
     CIRCUIT_BREAKERS.set(key, state);
   };
   const response = await requestPublic(

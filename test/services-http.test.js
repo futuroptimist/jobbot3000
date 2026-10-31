@@ -82,6 +82,7 @@ vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
 });
 import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
+import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
 import { createHttpClient } from "../src/services/http.js";
 import { clearFetchRateLimits } from "../src/fetch.js";
 afterEach(() => {
@@ -145,6 +146,42 @@ describe("createHttpClient", () => {
     await vi.advanceTimersByTimeAsync(10000);
     await pending;
     expect(codeAtDeadline).toBe("DEADLINE");
+    expect(fetch.mock.lastCall[1].signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("derives implicit timeouts from budgets and validates explicit timeouts", async () => {
+    fetch.mockResolvedValue({ body: "ok" });
+    const budget = createIngestionBudget({ limits: { requestMs: 100 } });
+    const client = createHttpClient();
+    expect(
+      await (await client.get("https://example.test", { budget })).text(),
+    ).toBe("ok");
+    await expect(
+      client.get("https://example.test", { budget, timeoutMs: 101 }),
+    ).rejects.toMatchObject({ code: "URL_POLICY" });
+    await expect(
+      createHttpClient({ defaultTimeoutMs: 101 }).get("https://example.test", {
+        budget,
+      }),
+    ).rejects.toMatchObject({ code: "URL_POLICY" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the implicit budget deadline active through body delivery", async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation(() => new Promise(() => {}));
+    const budget = createIngestionBudget({ limits: { requestMs: 100 } });
+    let outcome;
+    const pending = createHttpClient()
+      .get("https://example.test", { budget })
+      .catch((error) => {
+        outcome = error;
+        return error;
+      });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(outcome.code).toBe("DEADLINE");
     expect(fetch.mock.lastCall[1].signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });

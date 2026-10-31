@@ -66,7 +66,8 @@ export function createHttpClient(options = {}) {
           ? requestOptions.timeoutMs
           : options.defaultTimeoutMs !== undefined
             ? options.defaultTimeoutMs
-            : DEFAULT_HTTP_TIMEOUT_MS,
+            : (requestOptions.budget?.limits?.requestMs ??
+              DEFAULT_HTTP_TIMEOUT_MS),
       retry: requestOptions.retry ??
         options.defaultRetry ?? {
           retries: defaults.maxRetries,

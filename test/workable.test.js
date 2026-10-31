@@ -85,6 +85,8 @@ vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
 });
 import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
+import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
+
 const JOBS_DIR = "jobs";
 
 describe("Workable ingest", () => {
@@ -102,6 +104,15 @@ describe("Workable ingest", () => {
       dataDir = undefined;
     }
     delete process.env.JOBBOT_DATA_DIR;
+  });
+
+  it("accepts a reduced request budget without an explicit timeout", async () => {
+    const { fetchWorkableJobs } = await import("../src/workable.js");
+    const budget = createIngestionBudget({ limits: { requestMs: 100 } });
+    fetch.mockResolvedValue({ body: '{"jobs":[]}' });
+    await fetchWorkableJobs("budget-example", { budget });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(budget.counts.attempts).toBe(1);
   });
 
   it("fetches Workable jobs and writes snapshots", async () => {

@@ -87,6 +87,8 @@ import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
 import { clearFetchRateLimits } from "../src/fetch.js";
 
+import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
+
 const JOBS_DIR = "jobs";
 
 describe("Greenhouse ingest", () => {
@@ -108,6 +110,15 @@ describe("Greenhouse ingest", () => {
     delete process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS;
     clearFetchRateLimits();
     vi.useRealTimers();
+  });
+
+  it("accepts a reduced request budget without an explicit timeout", async () => {
+    const { fetchGreenhouseJobs } = await import("../src/greenhouse.js");
+    const budget = createIngestionBudget({ limits: { requestMs: 100 } });
+    fetch.mockResolvedValue({ body: '{"jobs":[]}' });
+    await fetchGreenhouseJobs("budget-example", { budget });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(budget.counts.attempts).toBe(1);
   });
 
   it("fetches Greenhouse jobs and writes snapshots", async () => {

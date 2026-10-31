@@ -123,6 +123,23 @@ describe("HTTP resilience", () => {
       await (await fetchWithRetry("https://example.test", options)).text(),
     ).toBe("recovered");
   });
+  it("combines failures from overlapping requests before opening the circuit", async () => {
+    fetch.mockResolvedValue({ status: 503 });
+    const options = {
+      retry: { retries: 0 },
+      circuitBreaker: { key: "synthetic-overlap", threshold: 2, resetMs: 1000 },
+    };
+    const responses = await Promise.all([
+      fetchWithRetry("https://example.test/first", options),
+      fetchWithRetry("https://example.test/second", options),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([503, 503]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(
+      fetchWithRetry("https://example.test/third", options),
+    ).rejects.toMatchObject({ name: "CircuitBreakerOpenError", retryAt: 1000 });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it("shares breaker identity but excludes policy rejection", async () => {
     const options = {
       retry: { retries: 0 },
