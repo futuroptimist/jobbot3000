@@ -69,6 +69,7 @@ Important data paths:
 ## Job ingestion
 
 Job ingestion normalizes public ATS job boards into a consistent snapshot schema.
+See the [public ingestion transport contract](design/public-ingestion-transport.md).
 
 - `src/jobs.js` coordinates ingestion runs, persistence, and deduplication.
 - Provider modules (`src/greenhouse.js`, `src/lever.js`, `src/ashby.js`, `src/smartrecruiters.js`,

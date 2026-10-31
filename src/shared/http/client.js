@@ -1,105 +1,29 @@
-import fetch from 'node-fetch';
-
+import { Headers } from "node-fetch";
 import {
   DEFAULT_FETCH_HEADERS,
   fetchWithRetry,
   normalizeRateLimitInterval,
   setFetchRateLimit,
-} from '../../fetch.js';
-import { getHttpClientFeatureConfig } from './config.js';
+} from "./fetch.js";
+import {
+  IngestionError,
+  DEFAULT_LIMITS,
+  LIMIT_CEILINGS,
+  assertIngestionBudget,
+  limitsFor,
+} from "./ingestion-budget.js";
+import { getHttpClientFeatureConfig } from "./config.js";
 
-/** @typedef {import('node-fetch').RequestInit} FetchRequestInit */
-/** @typedef {import('node-fetch').Response} FetchResponse */
-
-/** @typedef {Error & { doNotRetry?: boolean }} AbortableError */
-/** @typedef {{ threshold?: number, resetMs?: number }} CircuitBreakerOptions */
-/** @typedef {{ key?: string, intervalMs?: number, lastInvokedAt?: number }} RateLimitOptions */
-/** @typedef {{ now?: () => number }} Clock */
-/** @typedef {(ms: number) => Promise<void>} SleepFn */
-
-/**
- * @typedef {Object} RetryOptions
- * @property {number} [retries]
- * @property {number} [delayMs]
- * @property {number} [factor]
- * @property {number} [maxDelayMs]
- * @property {(response: FetchResponse) => boolean} [shouldRetry]
- */
-
-/**
- * @typedef {Object} HttpClientOptions
- * @property {string} [provider]
- * @property {Record<string, string>} [defaultHeaders]
- * @property {RetryOptions} [defaultRetry]
- * @property {number} [defaultRateLimitMs]
- * @property {number} [defaultTimeoutMs]
- * @property {CircuitBreakerOptions} [defaultCircuitBreaker]
- * @property {Clock} [defaultClock]
- * @property {SleepFn} [defaultSleep]
- */
-
-/**
- * @typedef {FetchRequestInit & {
- *   headers?: Record<string, unknown>,
- *   rateLimit?: RateLimitOptions,
- *   fetchImpl?: (input: string | URL, init?: FetchRequestInit) => Promise<FetchResponse>,
- *   retry?: RetryOptions,
- *   timeoutMs?: number,
- *   signal?: AbortSignal,
- *   circuitBreaker?: CircuitBreakerOptions,
- *   sleep?: SleepFn,
- *   clock?: Clock
- * }} HttpRequestOptions
- */
-
-const DEFAULT_HTTP_TIMEOUT_MS = 10000;
-
-function createAbortError(reason) {
-  if (reason instanceof Error) {
-    const abortError = /** @type {AbortableError} */ (
-      new Error(reason.message, { cause: reason })
-    );
-    abortError.name = reason.name || 'AbortError';
-    abortError.doNotRetry = true;
-    return abortError;
-  }
-
-  const message = reason !== undefined ? String(reason) : 'Request aborted';
-  const abortError = /** @type {AbortableError} */ (
-    new Error(message, { cause: reason })
-  );
-  abortError.name = 'AbortError';
-  abortError.doNotRetry = true;
-  return abortError;
-}
-
-/**
- * @param {Record<string, string>} base
- * @param {Record<string, unknown>} [extra]
- * @returns {Record<string, string>}
- */
-function mergeHeaders(base, extra) {
-  if (!extra || typeof extra !== 'object') {
-    return { ...base };
-  }
-
-  const headers = { ...base };
-  for (const [key, value] of Object.entries(extra)) {
-    if (value === undefined || value === null) continue;
-    headers[key] = typeof value === 'string' ? value : String(value);
-  }
-  return headers;
-}
-
+export const DEFAULT_HTTP_TIMEOUT_MS = DEFAULT_LIMITS.requestMs;
 function resolveProviderKey(provider) {
-  if (typeof provider === 'string' && provider.trim()) {
+  if (typeof provider === "string" && provider.trim()) {
     return provider.trim();
   }
-  return 'http';
+  return "http";
 }
 
 function resolveRateLimitKey(url, provider, explicitKey) {
-  if (typeof explicitKey === 'string' && explicitKey.trim()) {
+  if (typeof explicitKey === "string" && explicitKey.trim()) {
     return explicitKey.trim();
   }
   try {
@@ -110,207 +34,93 @@ function resolveRateLimitKey(url, provider, explicitKey) {
   }
 }
 
-function normalizeTimeoutMs(timeoutMs, fallback) {
-  if (timeoutMs === undefined || timeoutMs === null) {
-    return fallback;
+function safeHeaders(input) {
+  try {
+    return new Headers(input);
+  } catch {
+    throw new IngestionError("URL_POLICY", "Invalid ingestion headers");
   }
-  if (!Number.isFinite(timeoutMs)) {
-    return fallback;
-  }
-  return timeoutMs < 0 ? 0 : timeoutMs;
 }
-
-/**
- * Create a pre-configured HTTP client for ATS integrations.
- *
- * @example
- * import { createHttpClient } from './src/services/http.js';
- *
- * const client = createHttpClient({
- *   provider: 'greenhouse',
- *   defaultHeaders: { Accept: 'application/json' },
- *   defaultRateLimitMs: 750,
- * });
- * const response = await client.json('https://boards.greenhouse.io/v1/boards/acme/jobs', {
- *   headers: { Authorization: `Bearer ${process.env.GREENHOUSE_TOKEN}` },
- *   rateLimit: { key: 'greenhouse:acme' },
- *   circuitBreaker: { threshold: 4, resetMs: 45_000 },
- * });
- * console.log(response.jobs.length);
- *
- * @param {HttpClientOptions} [options]
- */
 export function createHttpClient(options = {}) {
-  const {
-    provider,
-    defaultHeaders = {},
-    defaultRetry,
-    defaultRateLimitMs,
-    defaultTimeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
-    defaultCircuitBreaker,
-    defaultClock,
-    defaultSleep,
-  } = /** @type {HttpClientOptions} */ (options);
-  const providerKey = resolveProviderKey(provider);
-  const headers = mergeHeaders(DEFAULT_FETCH_HEADERS, defaultHeaders);
-  const normalizedDefaultRateLimit = normalizeRateLimitInterval(defaultRateLimitMs, 0);
-  const httpDefaults = getHttpClientFeatureConfig();
-
-  const resolvedDefaultRetry = (() => {
-    if (defaultRetry && typeof defaultRetry === 'object') {
-      return { ...defaultRetry };
+  const provider = resolveProviderKey(options.provider);
+  const defaults = getHttpClientFeatureConfig();
+  const headers = new Headers(DEFAULT_FETCH_HEADERS);
+  safeHeaders(options.defaultHeaders).forEach((value, name) =>
+    headers.set(name, value),
+  );
+  const request = async (url, requestOptions = {}) => {
+    if (requestOptions.budget != null)
+      assertIngestionBudget(requestOptions.budget);
+    const limits = limitsFor(
+      requestOptions.limits,
+      requestOptions.budget?.limits ?? DEFAULT_LIMITS,
+    );
+    // Resolve only omitted values here; explicit counts remain subject to transport validation.
+    const retry = { ...options.defaultRetry };
+    for (const [name, value] of Object.entries(requestOptions.retry ?? {})) {
+      if (value !== undefined) retry[name] = value;
     }
-    return {
-      retries: httpDefaults.maxRetries,
-      delayMs: httpDefaults.backoffMs,
-    };
-  })();
-
-  const resolvedDefaultCircuitBreaker = (() => {
-    if (defaultCircuitBreaker && typeof defaultCircuitBreaker === 'object') {
-      return { ...defaultCircuitBreaker };
+    if (retry.retries === undefined) {
+      const configured = limitsFor(
+        { retries: defaults.maxRetries },
+        LIMIT_CEILINGS,
+      ).retries;
+      retry.retries = Math.min(configured, limits.retries);
     }
-    return {
-      threshold: httpDefaults.circuitBreakerThreshold,
-      resetMs: httpDefaults.circuitBreakerResetMs,
-    };
-  })();
-
-  const applyRateLimit = (url, config = {}) => {
-    const { key, intervalMs, lastInvokedAt } = config || {};
-    const finalKey = resolveRateLimitKey(url, providerKey, key);
-    const interval = normalizeRateLimitInterval(intervalMs, normalizedDefaultRateLimit);
-    setFetchRateLimit(finalKey, interval, { lastInvokedAt });
-    return finalKey;
-  };
-
-  const request = async (url, options = {}) => {
-    const {
-      headers: extraHeaders,
-      rateLimit,
-      fetchImpl,
+    retry.delayMs ??= defaults.backoffMs;
+    const merged = new Headers(headers);
+    safeHeaders(requestOptions.headers).forEach((value, name) =>
+      merged.set(name, value),
+    );
+    const rate = requestOptions.rateLimit ?? {};
+    const key = resolveRateLimitKey(url, provider, rate.key);
+    setFetchRateLimit(
+      key,
+      normalizeRateLimitInterval(
+        rate.intervalMs,
+        options.defaultRateLimitMs ?? 0,
+      ),
+      { lastInvokedAt: rate.lastInvokedAt },
+    );
+    return fetchWithRetry(url, {
+      ...requestOptions,
+      headers: merged,
+      rateLimitKey: key,
+      timeoutMs:
+        requestOptions.timeoutMs !== undefined
+          ? requestOptions.timeoutMs
+          : options.defaultTimeoutMs !== undefined
+            ? options.defaultTimeoutMs
+            : limits.requestMs,
       retry,
-      timeoutMs,
-      signal,
-      circuitBreaker: circuitOverride,
-      sleep: requestSleep,
-      clock: requestClock,
-      ...init
-    } = /** @type {HttpRequestOptions} */ (options);
-
-    const rateLimitKey = applyRateLimit(url, rateLimit);
-
-    const mergedHeaders = mergeHeaders(headers, extraHeaders);
-    const finalTimeout = normalizeTimeoutMs(timeoutMs, defaultTimeoutMs);
-    const shouldManageAbort =
-      Boolean(signal) || (Number.isFinite(finalTimeout) && finalTimeout > 0);
-
-    let fetchImplForRetry = fetchImpl;
-
-    if (shouldManageAbort) {
-      const baseFetchImpl = fetchImpl ?? fetch;
-
-      fetchImplForRetry = async (input, initWithHeaders = {}) => {
-        const attemptController = new AbortController();
-        const finalInit = {
-          ...initWithHeaders,
-          signal: attemptController.signal,
-        };
-
-        let removeAbortListener;
-        let timeoutId;
-
-        if (signal) {
-          const propagateAbort = () => {
-            const abortError = createAbortError(signal.reason);
-            if (!attemptController.signal.aborted) {
-              attemptController.abort(abortError);
-            }
-          };
-
-          if (signal.aborted) {
-            propagateAbort();
-          } else {
-            signal.addEventListener('abort', propagateAbort, { once: true });
-            removeAbortListener = () => {
-              signal.removeEventListener('abort', propagateAbort);
-            };
-          }
-        }
-
-        if (Number.isFinite(finalTimeout) && finalTimeout > 0) {
-          timeoutId = setTimeout(() => {
-            const timeoutError = new Error(`Request timed out after ${finalTimeout} ms`);
-            timeoutError.name = 'TimeoutError';
-            if (!attemptController.signal.aborted) {
-              attemptController.abort(timeoutError);
-            }
-          }, finalTimeout);
-        }
-
-        try {
-          return await baseFetchImpl(input, finalInit);
-        } catch (error) {
-          if (attemptController.signal.aborted) {
-            const reason = attemptController.signal.reason;
-            if (reason instanceof Error) {
-              throw reason;
-            }
-            throw createAbortError(reason);
-          }
-          throw error;
-        } finally {
-          if (timeoutId) clearTimeout(timeoutId);
-          if (removeAbortListener) removeAbortListener();
-        }
-      };
-    }
-
-    try {
-      return await fetchWithRetry(
-        url,
-        {
-          fetchImpl: fetchImplForRetry,
-          retry: retry ?? resolvedDefaultRetry,
-          rateLimitKey,
-          headers: mergedHeaders,
-          circuitBreaker: circuitOverride ?? resolvedDefaultCircuitBreaker,
-          sleep: requestSleep ?? defaultSleep,
-          clock: requestClock ?? defaultClock,
+      circuitBreaker: requestOptions.circuitBreaker ??
+        options.defaultCircuitBreaker ?? {
+          threshold: defaults.circuitBreakerThreshold,
+          resetMs: defaults.circuitBreakerResetMs,
         },
-        /** @type {FetchRequestInit} */ (init),
+      clock: requestOptions.clock ?? options.defaultClock,
+    });
+  };
+  const json = async (url, requestOptions = {}) => {
+    const response = await request(url, requestOptions);
+    if (!response.ok)
+      throw new IngestionError("HTTP_STATUS", "Provider request failed");
+    requestOptions.budget?.check();
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new IngestionError(
+        "PAYLOAD_INVALID",
+        "Provider response is not valid JSON",
       );
-    } catch (err) {
-      if (err && err.name === 'AbortError' && err.doNotRetry) {
-        throw err;
-      }
-      throw err;
     }
+    requestOptions.budget?.check();
+    return payload;
   };
-
-  const json = async (url, options = {}) => {
-    const { onError, ...rest } = options;
-    const response = await request(url, rest);
-    if (!response.ok) {
-      if (typeof onError === 'function') {
-        const customError = onError({ response, url });
-        if (customError instanceof Error) {
-          throw customError;
-        }
-        if (customError !== undefined) {
-          throw new Error(String(customError));
-        }
-      }
-      throw new Error(`Request failed with ${response.status} ${response.statusText} for ${url}`);
-    }
-    return response.json();
+  return {
+    request,
+    json,
+    get: (url, options = {}) => request(url, { ...options, method: "GET" }),
   };
-
-  const get = (url, options = {}) => request(url, { ...options, method: 'GET' });
-
-  // Regression coverage in test/services-http.test.js exercises header merging,
-  // timeout handling, and the GET helper.
-  return { request, json, get };
 }
-
-export { DEFAULT_HTTP_TIMEOUT_MS };
