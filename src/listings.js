@@ -1,80 +1,84 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import {
+  createIngestionBudget,
+  isTerminalIngestionError,
+} from "./shared/http/ingestion-budget.js";
+import fs from "node:fs/promises";
+import path from "node:path";
 
-import { greenhouseAdapter } from './greenhouse.js';
-import { leverAdapter } from './lever.js';
-import { ashbyAdapter } from './ashby.js';
-import { smartRecruitersAdapter } from './smartrecruiters.js';
-import { workableAdapter } from './workable.js';
-import { saveJobSnapshot } from './jobs.js';
-import { syncShortlistJob, addJobTags } from './shortlist.js';
-import { getLifecycleEntry, recordApplication } from './lifecycle.js';
-import { getDiscardedJobs, recordJobDiscard } from './discards.js';
+import { greenhouseAdapter } from "./greenhouse.js";
+import { leverAdapter } from "./lever.js";
+import { ashbyAdapter } from "./ashby.js";
+import { smartRecruitersAdapter } from "./smartrecruiters.js";
+import { workableAdapter } from "./workable.js";
+import { saveJobSnapshot } from "./jobs.js";
+import { syncShortlistJob, addJobTags } from "./shortlist.js";
+import { getLifecycleEntry, recordApplication } from "./lifecycle.js";
+import { getDiscardedJobs, recordJobDiscard } from "./discards.js";
 
-const AGGREGATE_PROVIDER_ID = 'all';
+const AGGREGATE_PROVIDER_ID = "all";
 const DEFAULT_AGGREGATE_SOURCES = Object.freeze([
-  { provider: 'greenhouse', identifier: 'acme-co' },
-  { provider: 'lever', identifier: 'acme' },
-  { provider: 'ashby', identifier: 'acme' },
-  { provider: 'smartrecruiters', identifier: 'acme' },
-  { provider: 'workable', identifier: 'acme' },
+  { provider: "greenhouse", identifier: "acme-co" },
+  { provider: "lever", identifier: "acme" },
+  { provider: "ashby", identifier: "acme" },
+  { provider: "smartrecruiters", identifier: "acme" },
+  { provider: "workable", identifier: "acme" },
 ]);
 
 const BASE_PROVIDERS = Object.freeze({
   greenhouse: {
-    id: 'greenhouse',
-    label: 'Greenhouse',
+    id: "greenhouse",
+    label: "Greenhouse",
     adapter: greenhouseAdapter,
-    identifierKey: 'board',
-    identifierLabel: 'Board slug',
-    placeholder: 'acme-co',
+    identifierKey: "board",
+    identifierLabel: "Board slug",
+    placeholder: "acme-co",
     requiresIdentifier: true,
   },
   lever: {
-    id: 'lever',
-    label: 'Lever',
+    id: "lever",
+    label: "Lever",
     adapter: leverAdapter,
-    identifierKey: 'org',
-    identifierLabel: 'Org slug',
-    placeholder: 'acme',
+    identifierKey: "org",
+    identifierLabel: "Org slug",
+    placeholder: "acme",
     requiresIdentifier: true,
   },
   ashby: {
-    id: 'ashby',
-    label: 'Ashby',
+    id: "ashby",
+    label: "Ashby",
     adapter: ashbyAdapter,
-    identifierKey: 'org',
-    identifierLabel: 'Org slug',
-    placeholder: 'acme',
+    identifierKey: "org",
+    identifierLabel: "Org slug",
+    placeholder: "acme",
     requiresIdentifier: true,
   },
   smartrecruiters: {
-    id: 'smartrecruiters',
-    label: 'SmartRecruiters',
+    id: "smartrecruiters",
+    label: "SmartRecruiters",
     adapter: smartRecruitersAdapter,
-    identifierKey: 'company',
-    identifierLabel: 'Company slug',
-    placeholder: 'acme',
+    identifierKey: "company",
+    identifierLabel: "Company slug",
+    placeholder: "acme",
     requiresIdentifier: true,
   },
   workable: {
-    id: 'workable',
-    label: 'Workable',
+    id: "workable",
+    label: "Workable",
     adapter: workableAdapter,
-    identifierKey: 'account',
-    identifierLabel: 'Account slug',
-    placeholder: 'acme',
+    identifierKey: "account",
+    identifierLabel: "Account slug",
+    placeholder: "acme",
     requiresIdentifier: true,
   },
 });
 
 const AGGREGATE_PROVIDER = Object.freeze({
   id: AGGREGATE_PROVIDER_ID,
-  label: 'All providers',
+  label: "All providers",
   aggregate: true,
   identifierKey: null,
-  identifierLabel: 'Saved sources',
-  placeholder: '',
+  identifierLabel: "Saved sources",
+  placeholder: "",
   requiresIdentifier: false,
 });
 
@@ -89,10 +93,10 @@ function isAggregateProvider(provider) {
 
 async function readJsonFile(filePath) {
   try {
-    const raw = await fs.readFile(filePath, 'utf8');
+    const raw = await fs.readFile(filePath, "utf8");
     return JSON.parse(raw);
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
+    if (error && error.code === "ENOENT") {
       return null;
     }
     throw error;
@@ -106,14 +110,16 @@ function normalizeAggregateSources(rawSources) {
   const normalized = [];
   const seen = new Set();
   for (const entry of rawSources) {
-    if (!entry || typeof entry !== 'object') continue;
+    if (!entry || typeof entry !== "object") continue;
     const providerId = sanitizeString(entry.provider).toLowerCase();
     if (!providerId || !BASE_PROVIDERS[providerId]) continue;
     const identifier = sanitizeString(entry.identifier);
     if (!identifier) continue;
     const limit =
-      Number.isFinite(entry.limit) && entry.limit > 0 ? Math.trunc(entry.limit) : undefined;
-    const key = `${providerId}:${identifier}:${limit ?? ''}`;
+      Number.isFinite(entry.limit) && entry.limit > 0
+        ? Math.trunc(entry.limit)
+        : undefined;
+    const key = `${providerId}:${identifier}:${limit ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     normalized.push({ provider: providerId, identifier, limit });
@@ -122,8 +128,8 @@ function normalizeAggregateSources(rawSources) {
 }
 
 async function loadAggregateSources() {
-  const overridePath = path.join(resolveDataDir(), 'listings', 'sources.json');
-  const fallbackPath = path.resolve('config', 'listings', 'sources.json');
+  const overridePath = path.join(resolveDataDir(), "listings", "sources.json");
+  const fallbackPath = path.resolve("config", "listings", "sources.json");
   const overrideSources = await readJsonFile(overridePath);
   if (overrideSources) {
     const normalized = normalizeAggregateSources(overrideSources);
@@ -142,12 +148,12 @@ async function loadAggregateSources() {
 }
 
 function resolveDataDir() {
-  return process.env.JOBBOT_DATA_DIR || path.resolve('data');
+  return process.env.JOBBOT_DATA_DIR || path.resolve("data");
 }
 
 function sanitizeString(value) {
-  if (value == null) return '';
-  const str = typeof value === 'string' ? value : String(value);
+  if (value == null) return "";
+  const str = typeof value === "string" ? value : String(value);
   return str.trim();
 }
 
@@ -158,14 +164,19 @@ function ensureProvider(provider, { allowAggregate = false } = {}) {
     throw new Error(`Unsupported listings provider: ${provider}`);
   }
   if (isAggregateProvider(entry) && !allowAggregate) {
-    throw new Error('Aggregate listings provider cannot be used for this operation');
+    throw new Error(
+      "Aggregate listings provider cannot be used for this operation",
+    );
   }
   return entry;
 }
 
 export function listListingProviders() {
-  const orderedProviders = [AGGREGATE_PROVIDER, ...Object.values(BASE_PROVIDERS)];
-  return orderedProviders.map(provider => ({
+  const orderedProviders = [
+    AGGREGATE_PROVIDER,
+    ...Object.values(BASE_PROVIDERS),
+  ];
+  return orderedProviders.map((provider) => ({
     id: provider.id,
     label: provider.label,
     identifierKey: provider.identifierKey,
@@ -176,18 +187,18 @@ export function listListingProviders() {
 }
 
 async function listExistingJobIds() {
-  const jobsDir = path.join(resolveDataDir(), 'jobs');
+  const jobsDir = path.join(resolveDataDir(), "jobs");
   try {
     const entries = await fs.readdir(jobsDir, { withFileTypes: true });
     const ids = new Set();
     for (const entry of entries) {
       if (!entry.isFile()) continue;
-      if (!entry.name.endsWith('.json')) continue;
+      if (!entry.name.endsWith(".json")) continue;
       ids.add(entry.name.slice(0, -5));
     }
     return ids;
   } catch (err) {
-    if (err && err.code === 'ENOENT') {
+    if (err && err.code === "ENOENT") {
       return new Set();
     }
     throw err;
@@ -197,19 +208,20 @@ async function listExistingJobIds() {
 async function listArchivedJobIds() {
   const archive = await getDiscardedJobs();
   const archived = new Set();
-  const entries = archive && typeof archive === 'object' ? Object.entries(archive) : [];
+  const entries =
+    archive && typeof archive === "object" ? Object.entries(archive) : [];
   for (const [jobId, history] of entries) {
     if (!Array.isArray(history)) continue;
     for (const entry of history) {
-      if (!entry || typeof entry !== 'object') continue;
+      if (!entry || typeof entry !== "object") continue;
       const reason = sanitizeString(entry.reason).toLowerCase();
-      if (reason.includes('archive')) {
+      if (reason.includes("archive")) {
         archived.add(jobId);
         break;
       }
       if (Array.isArray(entry.tags)) {
         for (const tag of entry.tags) {
-          if (sanitizeString(tag).toLowerCase() === 'archived') {
+          if (sanitizeString(tag).toLowerCase() === "archived") {
             archived.add(jobId);
             break;
           }
@@ -222,18 +234,18 @@ async function listArchivedJobIds() {
 }
 
 function toBoolean(value) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
   }
   return undefined;
 }
 
 function createSnippet(text, maxLength = 320) {
   const source = sanitizeString(text);
-  if (!source) return '';
+  if (!source) return "";
   if (source.length <= maxLength) return source;
   return `${source.slice(0, maxLength - 1)}…`;
 }
@@ -241,7 +253,7 @@ function createSnippet(text, maxLength = 320) {
 function detectRemoteFlag({ location, job }) {
   const sources = [];
   if (location) sources.push(location);
-  if (job && typeof job === 'object') {
+  if (job && typeof job === "object") {
     const candidates = [
       job.remote,
       job.isRemote,
@@ -253,38 +265,46 @@ function detectRemoteFlag({ location, job }) {
       job.locations,
     ];
     for (const candidate of candidates) {
-      if (typeof candidate === 'string') {
+      if (typeof candidate === "string") {
         sources.push(candidate);
       } else if (Array.isArray(candidate)) {
         for (const value of candidate) {
-          if (typeof value === 'string') sources.push(value);
+          if (typeof value === "string") sources.push(value);
         }
       }
     }
   }
   const joined = sources
-    .map(value => sanitizeString(value).toLowerCase())
+    .map((value) => sanitizeString(value).toLowerCase())
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
   if (!joined) return false;
   return /remote|distributed|anywhere/i.test(joined);
 }
 
 function normalizeRequirements(parsed) {
-  if (!parsed || typeof parsed !== 'object') return [];
+  if (!parsed || typeof parsed !== "object") return [];
   const list = Array.isArray(parsed.requirements) ? parsed.requirements : [];
   return list
-    .map(item => sanitizeString(item))
+    .map((item) => sanitizeString(item))
     .filter(Boolean)
     .slice(0, 8);
 }
 
 function buildListingSummary({ provider, identifier, snapshot, job, context }) {
-  const parsed = snapshot?.parsed && typeof snapshot.parsed === 'object' ? snapshot.parsed : {};
-  const rawBody = typeof parsed.body === 'string' ? parsed.body : snapshot?.raw;
-  const title = sanitizeString(parsed.title) || sanitizeString(job?.title) || 'Untitled role';
+  const parsed =
+    snapshot?.parsed && typeof snapshot.parsed === "object"
+      ? snapshot.parsed
+      : {};
+  const rawBody = typeof parsed.body === "string" ? parsed.body : snapshot?.raw;
+  const title =
+    sanitizeString(parsed.title) ||
+    sanitizeString(job?.title) ||
+    "Untitled role";
   const company =
-    sanitizeString(parsed.company) || sanitizeString(context?.slug) || sanitizeString(identifier);
+    sanitizeString(parsed.company) ||
+    sanitizeString(context?.slug) ||
+    sanitizeString(identifier);
   const location =
     sanitizeString(parsed.location) ||
     sanitizeString(job?.location?.name) ||
@@ -298,8 +318,9 @@ function buildListingSummary({ provider, identifier, snapshot, job, context }) {
   const remote = detectRemoteFlag({ location, job });
   const snippet = createSnippet(rawBody);
   const postedAt =
-    sanitizeString(job?.updated_at ?? job?.updatedAt ?? job?.created_at ?? job?.createdAt) ||
-    sanitizeString(snapshot?.fetchedAt);
+    sanitizeString(
+      job?.updated_at ?? job?.updatedAt ?? job?.created_at ?? job?.createdAt,
+    ) || sanitizeString(snapshot?.fetchedAt);
 
   const metadata = {};
   if (location) metadata.location = location;
@@ -315,7 +336,7 @@ function buildListingSummary({ provider, identifier, snapshot, job, context }) {
     team,
     compensation,
     remote,
-    url: snapshot?.source?.value || '',
+    url: snapshot?.source?.value || "",
     snippet,
     requirements,
     posted_at: postedAt || null,
@@ -339,7 +360,7 @@ function filterListings(listings, filters = {}) {
   const teamFilter = sanitizeString(filters.team ?? filters.department);
   const remoteFilter = toBoolean(filters.remote);
 
-  return listings.filter(listing => {
+  return listings.filter((listing) => {
     if (locationFilter && !matchesFilter(listing.location, locationFilter)) {
       return false;
     }
@@ -362,7 +383,8 @@ function normalizeIdentifier(value) {
 }
 
 async function normalizeSnapshot(adapter, job, context) {
-  const normalizedContext = context && typeof context === 'object' ? { ...context } : {};
+  const normalizedContext =
+    context && typeof context === "object" ? { ...context } : {};
   return adapter.normalizeJob(job, normalizedContext);
 }
 
@@ -385,15 +407,17 @@ async function collectListingStatusSets() {
     listArchivedJobIds(),
   ]);
   return {
-    existingIds: existingIds instanceof Set ? existingIds : new Set(existingIds ?? []),
-    archivedIds: archivedIds instanceof Set ? archivedIds : new Set(archivedIds ?? []),
+    existingIds:
+      existingIds instanceof Set ? existingIds : new Set(existingIds ?? []),
+    archivedIds:
+      archivedIds instanceof Set ? archivedIds : new Set(archivedIds ?? []),
   };
 }
 
 function applyListingState(listings, { existingIds, archivedIds }) {
   const ingestedIds = existingIds ?? new Set();
   const archived = archivedIds ?? new Set();
-  return listings.map(listing => ({
+  return listings.map((listing) => ({
     ...listing,
     ingested: ingestedIds.has(listing.jobId),
     archived: archived.has(listing.jobId),
@@ -403,14 +427,20 @@ function applyListingState(listings, { existingIds, archivedIds }) {
 async function loadProviderSummaries(providerEntry, options = {}) {
   const targetIdentifier = normalizeIdentifier(options.identifier);
   if (!targetIdentifier) {
-    return { identifier: '', summaries: [] };
+    return { identifier: "", summaries: [] };
   }
-  const args = { [providerEntry.identifierKey]: targetIdentifier };
+  const budget = options.budget ?? createIngestionBudget();
+  const args = { [providerEntry.identifierKey]: targetIdentifier, budget };
   const { jobs, context } = await providerEntry.adapter.listOpenings(args);
   const summaries = [];
   for (const job of Array.isArray(jobs) ? jobs : []) {
     try {
-      const snapshot = await normalizeSnapshot(providerEntry.adapter, job, context);
+      budget.check();
+      const snapshot = await normalizeSnapshot(providerEntry.adapter, job, {
+        ...context,
+        budget,
+      });
+      budget.check();
       const summary = buildListingSummary({
         provider: providerEntry.id,
         identifier: targetIdentifier,
@@ -420,7 +450,8 @@ async function loadProviderSummaries(providerEntry, options = {}) {
       });
       summary.jobId = snapshot.id;
       summaries.push(summary);
-    } catch {
+    } catch (error) {
+      if (isTerminalIngestionError(error)) throw budget.annotate(error);
       // Skip jobs that fail to normalize so one bad posting doesn't break the listing.
     }
   }
@@ -444,28 +475,29 @@ function toTimestamp(value) {
 }
 
 function sortListingsByRecency(listings) {
-  return listings
-    .slice()
-    .sort((a, b) => {
-      const aTime = toTimestamp(a?.posted_at);
-      const bTime = toTimestamp(b?.posted_at);
-      if (aTime && bTime) {
-        return bTime - aTime;
-      }
-      if (aTime) return -1;
-      if (bTime) return 1;
-      const aTitle = sanitizeString(a?.title);
-      const bTitle = sanitizeString(b?.title);
-      return aTitle.localeCompare(bTitle);
-    });
+  return listings.slice().sort((a, b) => {
+    const aTime = toTimestamp(a?.posted_at);
+    const bTime = toTimestamp(b?.posted_at);
+    if (aTime && bTime) {
+      return bTime - aTime;
+    }
+    if (aTime) return -1;
+    if (bTime) return 1;
+    const aTitle = sanitizeString(a?.title);
+    const bTitle = sanitizeString(b?.title);
+    return aTitle.localeCompare(bTitle);
+  });
 }
 
 async function buildProviderListings(providerEntry, options, statusSets) {
-  const { identifier, summaries } = await loadProviderSummaries(providerEntry, options);
+  const { identifier, summaries } = await loadProviderSummaries(
+    providerEntry,
+    options,
+  );
   if (!identifier) {
     return {
       provider: providerEntry.id,
-      identifier: '',
+      identifier: "",
       listings: [],
       total: 0,
       allListings: [],
@@ -484,9 +516,14 @@ async function buildProviderListings(providerEntry, options, statusSets) {
 }
 
 export async function fetchListings(options = {}) {
-  const providerEntry = ensureProvider(options.provider, { allowAggregate: true });
+  options = { ...options, budget: options.budget ?? createIngestionBudget() };
+  const providerEntry = ensureProvider(options.provider, {
+    allowAggregate: true,
+  });
   const limit =
-    Number.isFinite(options.limit) && options.limit > 0 ? Math.trunc(options.limit) : undefined;
+    Number.isFinite(options.limit) && options.limit > 0
+      ? Math.trunc(options.limit)
+      : undefined;
   const statusSets = await collectListingStatusSets();
 
   if (isAggregateProvider(providerEntry)) {
@@ -494,7 +531,7 @@ export async function fetchListings(options = {}) {
     if (sources.length === 0) {
       return {
         provider: providerEntry.id,
-        identifier: '',
+        identifier: "",
         fetched_at: new Date().toISOString(),
         total: 0,
         listings: [],
@@ -520,13 +557,15 @@ export async function fetchListings(options = {}) {
           statusSets,
         );
         for (const listing of result.allListings) {
-          if (!listing || typeof listing !== 'object') continue;
+          if (!listing || typeof listing !== "object") continue;
           if (!listing.jobId) continue;
           if (seen.has(listing.jobId)) continue;
           seen.add(listing.jobId);
           aggregated.push(listing);
         }
-      } catch {
+      } catch (error) {
+        if (isTerminalIngestionError(error))
+          throw options.budget.annotate(error);
         // Skip failing sources so one misconfigured provider does not block aggregation.
       }
     }
@@ -535,7 +574,7 @@ export async function fetchListings(options = {}) {
     const limitedResults = limitListings(sorted, limit);
     return {
       provider: providerEntry.id,
-      identifier: '',
+      identifier: "",
       fetched_at: new Date().toISOString(),
       total: sorted.length,
       listings: limitedResults,
@@ -571,8 +610,8 @@ function buildShortlistMetadata(metadata = {}) {
 async function ensureLifecycleTracking(jobId) {
   const existing = await getLifecycleEntry(jobId);
   if (existing) return existing;
-  await recordApplication(jobId, 'no_response', {
-    note: 'Listing ingested via web interface',
+  await recordApplication(jobId, "no_response", {
+    note: "Listing ingested via web interface",
     date: new Date().toISOString(),
   });
   return getLifecycleEntry(jobId);
@@ -583,10 +622,11 @@ export async function ingestListing({ provider, identifier, jobId } = {}) {
   const targetIdentifier = normalizeIdentifier(identifier, providerEntry);
   const desiredJobId = sanitizeString(jobId);
   if (!desiredJobId) {
-    throw new Error('A listing jobId is required for ingestion');
+    throw new Error("A listing jobId is required for ingestion");
   }
 
-  const args = { [providerEntry.identifierKey]: targetIdentifier };
+  const budget = createIngestionBudget();
+  const args = { [providerEntry.identifierKey]: targetIdentifier, budget };
   const { jobs, context } = await providerEntry.adapter.listOpenings(args);
 
   let matchedSnapshot = null;
@@ -594,8 +634,14 @@ export async function ingestListing({ provider, identifier, jobId } = {}) {
   for (const job of Array.isArray(jobs) ? jobs : []) {
     let snapshot;
     try {
-      snapshot = await normalizeSnapshot(providerEntry.adapter, job, context);
-    } catch {
+      budget.check();
+      snapshot = await normalizeSnapshot(providerEntry.adapter, job, {
+        ...context,
+        budget,
+      });
+      budget.check();
+    } catch (error) {
+      if (isTerminalIngestionError(error)) throw budget.annotate(error);
       continue;
     }
     if (snapshot.id !== desiredJobId) {
@@ -613,13 +659,24 @@ export async function ingestListing({ provider, identifier, jobId } = {}) {
   }
 
   if (!matchedSnapshot || !matchedSummary) {
-    throw new Error('Listing could not be located for ingestion');
+    throw new Error("Listing could not be located for ingestion");
   }
 
-  await saveJobSnapshot(matchedSnapshot);
-  await syncShortlistJob(matchedSnapshot.id, buildShortlistMetadata(matchedSummary.metadata));
-  await addJobTags(matchedSnapshot.id, ['listing', providerEntry.id]);
-  await ensureLifecycleTracking(matchedSnapshot.id);
+  budget.check();
+  try {
+    await saveJobSnapshot(matchedSnapshot);
+    budget.progress.completed = 1;
+    budget.progress.saved = 1;
+    budget.progress.jobIds.push(matchedSnapshot.id);
+    await syncShortlistJob(
+      matchedSnapshot.id,
+      buildShortlistMetadata(matchedSummary.metadata),
+    );
+    await addJobTags(matchedSnapshot.id, ["listing", providerEntry.id]);
+    await ensureLifecycleTracking(matchedSnapshot.id);
+  } catch (error) {
+    throw budget.annotate(error);
+  }
 
   return {
     jobId: matchedSnapshot.id,
@@ -634,14 +691,17 @@ export async function ingestListing({ provider, identifier, jobId } = {}) {
 export async function archiveListing({ jobId, reason } = {}) {
   const normalizedId = sanitizeString(jobId);
   if (!normalizedId) {
-    throw new Error('jobId is required to archive a listing');
+    throw new Error("jobId is required to archive a listing");
   }
-  const archiveReason = sanitizeString(reason) || 'Archived listing';
+  const archiveReason = sanitizeString(reason) || "Archived listing";
   const entry = await recordJobDiscard(normalizedId, {
     reason: archiveReason,
-    tags: ['archived'],
+    tags: ["archived"],
     date: new Date().toISOString(),
   });
-  return { jobId: normalizedId, archived_at: entry.discarded_at, reason: entry.reason };
+  return {
+    jobId: normalizedId,
+    archived_at: entry.discarded_at,
+    reason: entry.reason,
+  };
 }
-
