@@ -5,10 +5,16 @@ import {
   normalizeRateLimitInterval,
   setFetchRateLimit,
 } from "./fetch.js";
-import { IngestionError } from "./ingestion-budget.js";
+import {
+  IngestionError,
+  DEFAULT_LIMITS,
+  LIMIT_CEILINGS,
+  assertIngestionBudget,
+  limitsFor,
+} from "./ingestion-budget.js";
 import { getHttpClientFeatureConfig } from "./config.js";
 
-export const DEFAULT_HTTP_TIMEOUT_MS = 10000;
+export const DEFAULT_HTTP_TIMEOUT_MS = DEFAULT_LIMITS.requestMs;
 function resolveProviderKey(provider) {
   if (typeof provider === "string" && provider.trim()) {
     return provider.trim();
@@ -43,6 +49,25 @@ export function createHttpClient(options = {}) {
     headers.set(name, value),
   );
   const request = async (url, requestOptions = {}) => {
+    if (requestOptions.budget != null)
+      assertIngestionBudget(requestOptions.budget);
+    const limits = limitsFor(
+      requestOptions.limits,
+      requestOptions.budget?.limits ?? DEFAULT_LIMITS,
+    );
+    // Resolve only omitted values here; explicit counts remain subject to transport validation.
+    const retry = { ...options.defaultRetry };
+    for (const [name, value] of Object.entries(requestOptions.retry ?? {})) {
+      if (value !== undefined) retry[name] = value;
+    }
+    if (retry.retries === undefined) {
+      const configured = limitsFor(
+        { retries: defaults.maxRetries },
+        LIMIT_CEILINGS,
+      ).retries;
+      retry.retries = Math.min(configured, limits.retries);
+    }
+    retry.delayMs ??= defaults.backoffMs;
     const merged = new Headers(headers);
     safeHeaders(requestOptions.headers).forEach((value, name) =>
       merged.set(name, value),
@@ -66,13 +91,8 @@ export function createHttpClient(options = {}) {
           ? requestOptions.timeoutMs
           : options.defaultTimeoutMs !== undefined
             ? options.defaultTimeoutMs
-            : (requestOptions.budget?.limits?.requestMs ??
-              DEFAULT_HTTP_TIMEOUT_MS),
-      retry: requestOptions.retry ??
-        options.defaultRetry ?? {
-          retries: defaults.maxRetries,
-          delayMs: defaults.backoffMs,
-        },
+            : limits.requestMs,
+      retry,
       circuitBreaker: requestOptions.circuitBreaker ??
         options.defaultCircuitBreaker ?? {
           threshold: defaults.circuitBreakerThreshold,

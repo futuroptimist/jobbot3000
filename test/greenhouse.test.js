@@ -112,6 +112,26 @@ describe("Greenhouse ingest", () => {
     vi.useRealTimers();
   });
 
+  it.each([0, 1])(
+    "bounds omitted retry counts by a %s-retry budget",
+    async (retries) => {
+      const { fetchGreenhouseJobs } = await import("../src/greenhouse.js");
+      const budget = createIngestionBudget({ limits: { retries } });
+      fetch.mockResolvedValue({ status: 503, body: "synthetic unavailable" });
+      await expect(
+        fetchGreenhouseJobs(`retry-budget-${retries}`, { budget }),
+      ).rejects.toMatchObject({ code: "HTTP_STATUS" });
+      expect(fetch).toHaveBeenCalledTimes(retries + 1);
+      await expect(
+        fetchGreenhouseJobs(`retry-budget-${retries}`, {
+          budget,
+          retry: { retries: retries + 1 },
+        }),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      expect(fetch).toHaveBeenCalledTimes(retries + 1);
+    },
+  );
+
   it("accepts a reduced request budget without an explicit timeout", async () => {
     const { fetchGreenhouseJobs } = await import("../src/greenhouse.js");
     const budget = createIngestionBudget({ limits: { requestMs: 100 } });

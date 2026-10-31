@@ -51,12 +51,6 @@ export function createAdapterHttpClient({
   }
   const normalizedRateLimit = normalizeRateLimitInterval(rateLimitMs, 0);
   const httpDefaults = getHttpClientFeatureConfig();
-  const resolvedRetry = (() => {
-    const base = retry && typeof retry === "object" ? { ...retry } : {};
-    base.retries = parseNumber(base.retries, httpDefaults.maxRetries);
-    base.delayMs = parseNumber(base.delayMs, httpDefaults.backoffMs);
-    return base;
-  })();
   const resolvedCircuitBreaker = {
     threshold: parseNumber(
       circuitBreaker?.threshold,
@@ -71,7 +65,7 @@ export function createAdapterHttpClient({
     provider: provider.trim(),
     defaultHeaders: headers,
     defaultRateLimitMs: normalizedRateLimit,
-    defaultRetry: resolvedRetry,
+    defaultRetry: retry,
     defaultTimeoutMs: timeoutMs,
     defaultCircuitBreaker: resolvedCircuitBreaker,
   });

@@ -86,6 +86,8 @@ import { createAdapterHttpClient } from "../src/modules/scraping/adapters/common
 import { __resetHttpCircuitBreakersForTest } from "../src/shared/http/fetch.js";
 import { __resetHttpClientFeatureConfigForTest } from "../src/shared/http/config.js";
 
+import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
+
 const HTTP_ENV_KEYS = [
   "JOBBOT_HTTP_MAX_RETRIES",
   "JOBBOT_HTTP_BACKOFF_MS",
@@ -146,6 +148,51 @@ describe("http client manifest defaults", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    [0, 1, undefined],
+    [1, 0, undefined],
+    [1, 1, 0],
+    [1, 1, undefined],
+  ])(
+    "bounds manifest %s retries by budget %s and request %s",
+    async (configured, budgetRetries, requestRetries) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      process.env.JOBBOT_HTTP_MAX_RETRIES = String(configured);
+      process.env.JOBBOT_HTTP_BACKOFF_MS = "10";
+      __resetHttpClientFeatureConfigForTest();
+      const times = [];
+      fetch.mockImplementation(() => {
+        times.push(Date.now());
+        return { status: 503 };
+      });
+      const budget = createIngestionBudget({
+        limits: { retries: budgetRetries },
+      });
+      const client = createAdapterHttpClient({ provider: "synthetic" });
+      const pending = client.get("https://example.test", {
+        budget,
+        limits: requestRetries === undefined ? {} : { retries: requestRetries },
+        retry: { factor: 2 },
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await pending).status).toBe(503);
+      const retries = Math.min(configured, budgetRetries, requestRetries ?? 2);
+      expect(times).toEqual(retries === 0 ? [0] : [0, 10]);
+    },
+  );
+  it("does not conceal an above-ceiling manifest retry default", async () => {
+    process.env.JOBBOT_HTTP_MAX_RETRIES = "3";
+    __resetHttpClientFeatureConfigForTest();
+    const budget = createIngestionBudget({ limits: { retries: 0 } });
+    await expect(
+      createAdapterHttpClient({ provider: "synthetic" }).get(
+        "https://example.test",
+        { budget },
+      ),
+    ).rejects.toMatchObject({ code: "URL_POLICY" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("opens the circuit breaker using manifest thresholds", async () => {
     process.env.JOBBOT_HTTP_MAX_RETRIES = "0";
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = "2";

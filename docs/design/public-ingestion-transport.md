@@ -97,6 +97,13 @@ are supported.
 | Active logical operations / requests per origin    |          4 / 1 |          4 / 1 |
 | Total queued waits / simultaneous candidate setups |         64 / 2 |         64 / 2 |
 
+Clients resolve omitted retry counts and timeouts against the supplied run budget
+and reduced request limits. A lower manifest retry default remains lower; an invalid
+above-ceiling default still fails validation. Adapters preserve omitted fields, and
+partial request retry options inherit configured client retry fields. Explicit retry
+counts and timeouts remain validated rather than silently capped by the client.
+Backoff defaults remain configured independently; waits consume the absolute deadline.
+
 Only bounded 429/5xx responses and transport failures retry, with default 250 ms
 exponential backoff. Policy, TLS identity, cancellation, deadline and resource-limit
 failures are terminal. Retries consume the original deadline and run counters.

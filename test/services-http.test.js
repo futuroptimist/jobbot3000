@@ -83,11 +83,14 @@ vi.mock("../src/shared/http/direct-transport.js", async (importOriginal) => {
 import { exchange as fetch } from "../src/shared/http/direct-transport.js";
 
 import { createIngestionBudget } from "../src/shared/http/ingestion-budget.js";
+import { createAdapterHttpClient } from "../src/modules/scraping/adapters/common.js";
 import { createHttpClient } from "../src/services/http.js";
 import { clearFetchRateLimits } from "../src/fetch.js";
+import { __resetHttpCircuitBreakersForTest } from "../src/shared/http/fetch.js";
 afterEach(() => {
   fetch.mockReset();
   clearFetchRateLimits();
+  __resetHttpCircuitBreakersForTest();
   vi.useRealTimers();
 });
 describe("createHttpClient", () => {
@@ -184,6 +187,122 @@ describe("createHttpClient", () => {
     expect(outcome.code).toBe("DEADLINE");
     expect(fetch.mock.lastCall[1].signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+  });
+  describe.each([
+    ["client", (retry) => createHttpClient({ defaultRetry: retry })],
+    [
+      "adapter",
+      (retry) => createAdapterHttpClient({ provider: "synthetic", retry }),
+    ],
+  ])("%s implicit retry limits", (_label, makeClient) => {
+    it.each([
+      [0, undefined],
+      [1, undefined],
+      [undefined, 0],
+      [undefined, 1],
+      [1, 0],
+    ])(
+      "bounds defaults by budget %s and request limit %s",
+      async (budgetRetries, requestRetries) => {
+        vi.useFakeTimers();
+        fetch.mockResolvedValue({ status: 503 });
+        const budget = createIngestionBudget({
+          limits: budgetRetries === undefined ? {} : { retries: budgetRetries },
+        });
+        const limits =
+          requestRetries === undefined ? {} : { retries: requestRetries };
+        const pending = makeClient()
+          .get("https://example.test", { budget, limits })
+          .catch((error) => error);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect((await pending).status).toBe(503);
+        expect(fetch).toHaveBeenCalledTimes(
+          1 + Math.min(budgetRetries ?? 2, requestRetries ?? 2),
+        );
+        expect(vi.getTimerCount()).toBe(0);
+      },
+    );
+    it("bounds partial retry options without erasing explicit counts", async () => {
+      const budget = createIngestionBudget({ limits: { retries: 0 } });
+      fetch.mockResolvedValue({ status: 503 });
+      expect(
+        (
+          await makeClient().get("https://example.test", {
+            budget,
+            retry: { delayMs: 0 },
+          })
+        ).status,
+      ).toBe(503);
+      expect(
+        (
+          await makeClient({ delayMs: 0 }).get("https://example.test", {
+            budget,
+          })
+        ).status,
+      ).toBe(503);
+      await expect(
+        makeClient().get("https://example.test", {
+          budget,
+          retry: { retries: 1 },
+        }),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      await expect(
+        makeClient({ retries: 1 }).get("https://example.test", { budget }),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      await expect(
+        makeClient().get("https://example.test", {
+          limits: { retries: 0 },
+          retry: { retries: 1 },
+        }),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+    it("preserves configured counts across partial request overrides", async () => {
+      fetch.mockResolvedValue({ status: 503 });
+      const budget = createIngestionBudget({ limits: { retries: 0 } });
+      await expect(
+        makeClient({ retries: 1 }).get("https://example.test", {
+          budget,
+          retry: { retries: undefined, delayMs: 0 },
+        }),
+      ).rejects.toMatchObject({ code: "URL_POLICY" });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(
+        (
+          await makeClient({ retries: 0 }).get("https://example.test", {
+            budget: createIngestionBudget({ limits: { retries: 1 } }),
+            retry: { delayMs: 0 },
+          })
+        ).status,
+      ).toBe(503);
+      expect(
+        (
+          await makeClient({ retries: 1 }).get("https://example.test", {
+            budget,
+            retry: { retries: 0 },
+          })
+        ).status,
+      ).toBe(503);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+    it.each([Infinity, -1, 0.5, "0"])(
+      "validates explicit backoff %s",
+      async (delayMs) => {
+        await expect(
+          makeClient({ delayMs }).get("https://example.test"),
+        ).rejects.toMatchObject({ code: "URL_POLICY" });
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
+    it.each([null, -1, 0.5, Infinity, "1"])(
+      "does not normalize explicit count %s",
+      async (retries) => {
+        await expect(
+          makeClient({ retries }).get("https://example.test"),
+        ).rejects.toMatchObject({ code: "URL_POLICY" });
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
   });
   it("spaces overlapping same-origin requests after the previous body completes", async () => {
     vi.useFakeTimers();
