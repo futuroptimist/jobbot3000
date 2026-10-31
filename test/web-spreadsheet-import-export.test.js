@@ -557,7 +557,7 @@ describe("spreadsheet import/export", () => {
     expect(tracker).toContain("importJsonBackup(text)");
     expect(tracker).toContain("importNdjsonBackup(text)");
     expect(tracker).toContain("bundleForIndexedDb(bundle)");
-    expect(tracker).toContain("detectImportConflicts(state.preview)");
+    expect(tracker).toContain("detectImportConflicts(preview)");
     expect(tracker).toContain("existing record conflicts");
     expect(tracker).toContain("Import will replace");
     expect(tracker).toContain(
@@ -628,7 +628,6 @@ describe("spreadsheet import/export", () => {
         rowNumber: 2,
         field: "posting_url",
         code: "malformed_url",
-        message: "posting_url is not a valid http(s) URL.",
       }),
     );
   });
@@ -1825,7 +1824,6 @@ describe("spreadsheet import/export", () => {
       expect.objectContaining({
         rowNumber: 2,
         code: "unsupported_event_type",
-        value: "bespoke_vendor_ping",
       }),
     ]);
     expect(bundle.lifecycleEvents).toHaveLength(1);
@@ -2426,7 +2424,6 @@ describe("spreadsheet import/export", () => {
         rowNumber: 2,
         field: "application_id",
         code: "unknown_application",
-        value: "app_missing_lifecycle",
       }),
     ]);
     const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
@@ -2988,12 +2985,12 @@ describe("spreadsheet import/export", () => {
           exportedAt: "2026-03-01T00:00:00.000Z",
         })}\n${JSON.stringify({ type: "futureStore", record: {} })}\n`,
       ),
-    ).toThrow("Unknown or malformed NDJSON record type: futureStore");
+    ).toThrow("Import data is malformed or exceeds import policy limits.");
   });
 
   it("throws an explicit error for malformed NDJSON entries", () => {
     expect(() => importNdjsonBackup("null\n")).toThrow(
-      "Unknown or malformed NDJSON record type: missing type",
+      "Import data is malformed or exceeds import policy limits.",
     );
   });
 

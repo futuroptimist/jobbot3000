@@ -1,3 +1,14 @@
+import {
+  IMPORT_LIMITS_V1,
+  ImportAdmissionError,
+  rejectImport,
+  assertImportTextBudget,
+  assertImportObjectBudget,
+  assertImportRowsBudget,
+  assertImportCandidateBudget,
+  importNdjsonLines,
+} from "./importAdmission.js";
+import { collectImportContactIssues } from "../../domain/browserImportValidation.js";
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
 import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
 import {
@@ -229,11 +240,26 @@ const remapApplicationScopedRecord = (
 };
 
 const parseCsvRows = (text) => {
+  assertImportTextBudget(text, "csv");
   const rows = [];
   let row = [];
   let field = "";
   let inQuotes = false;
   const input = String(text ?? "").replace(/^\uFEFF/, "");
+  const pushField = () => {
+    if (
+      field.length > IMPORT_LIMITS_V1.stringLength ||
+      row.length >= IMPORT_LIMITS_V1.csvColumns
+    )
+      rejectImport();
+    row.push(field);
+    field = "";
+  };
+  const pushRow = () => {
+    if (rows.length >= IMPORT_LIMITS_V1.csvRows + 1) rejectImport();
+    rows.push(row);
+    row = [];
+  };
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index];
     if (inQuotes) {
@@ -244,19 +270,26 @@ const parseCsvRows = (text) => {
       else field += char;
     } else if (char === '"') inQuotes = true;
     else if (char === ",") {
-      row.push(field);
-      field = "";
+      pushField();
     } else if (char === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
+      pushField();
+      pushRow();
     } else if (char !== "\r") field += char;
+    if (field.length > IMPORT_LIMITS_V1.stringLength) rejectImport();
   }
-  row.push(field);
-  if (row.some((value) => value !== "") || rows.length > 0) rows.push(row);
+  if (inQuotes) rejectImport();
+  // A terminal newline terminates the last record; it does not add another.
+  if (field !== "" || row.length || (input && !input.endsWith("\n"))) {
+    pushField();
+    pushRow();
+  }
   if (rows.length === 0) return [];
   const headers = rows[0].map(normalizeKey);
+  if (
+    new Set(headers).size !== headers.length ||
+    rows.slice(1).some((values) => values.length > headers.length)
+  )
+    rejectImport();
   return {
     headers,
     rows: rows
@@ -676,13 +709,15 @@ const generatedLifecycleId = (row) => {
   )}`;
 };
 
-export const lifecycleRowsToBrowserApplicationExport = (
+const lifecycleRowsToBrowserApplicationExportUnchecked = (
   rows,
   existing,
   { exportedAt = nowIso() } = {},
 ) => {
   const errors = [];
   const warnings = [];
+  assertImportRowsBudget(rows);
+  assertImportCandidateBudget(existing ?? { applications: [] });
   const existingApplications = existing?.applications ?? [];
   const applicationIds = new Set(existingApplications.map(({ id }) => id));
   const lifecycleEvents = [];
@@ -863,6 +898,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
+  assertImportCandidateBudget(bundle, { rejectDuplicateIds: false });
   let canonicalBundle = bundle;
   try {
     canonicalBundle = upgradeBrowserExportToV2(bundle, {
@@ -871,13 +907,14 @@ export const lifecycleRowsToBrowserApplicationExport = (
   } catch {
     // The structured schema error below is more useful to import previews.
   }
+  assertImportCandidateBudget(canonicalBundle, { rejectDuplicateIds: false });
   const parsed = browserApplicationExportSchema.safeParse(canonicalBundle);
   if (!parsed.success)
     errors.push({
       rowNumber: null,
       field: "bundle",
       code: "schema_validation_failed",
-      message: parsed.error.message,
+      message: "Import data does not match the backup schema.",
     });
   return { bundle: canonicalBundle, errors, warnings };
 };
@@ -885,10 +922,11 @@ export const lifecycleRowsToBrowserApplicationExport = (
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
   lifecycleRowsToBrowserApplicationExport(parseCsv(csvText), existing, options);
 
-export const rowsToBrowserApplicationExport = (
+const rowsToBrowserApplicationExportUnchecked = (
   rows,
   { exportedAt = nowIso() } = {},
 ) => {
+  assertImportRowsBudget(rows);
   const errors = [];
   const warnings = [];
   const applications = [],
@@ -1213,6 +1251,7 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
+  assertImportCandidateBudget(bundle, { rejectDuplicateIds: false });
   try {
     const upgraded = upgradeBrowserExportToV2(bundle, {
       migrationCreatedAt: exportedAt,
@@ -1236,21 +1275,22 @@ export const rowsToBrowserApplicationExport = (
         ),
       };
     });
-  } catch (error) {
+  } catch {
     errors.push({
       rowNumber: null,
       field: "bundle",
       code: "schema_validation_failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: "Import data does not match the backup schema.",
     });
   }
+  assertImportCandidateBudget(bundle, { rejectDuplicateIds: false });
   const parsed = browserApplicationExportSchema.safeParse(bundle);
   if (!parsed.success)
     errors.push({
       rowNumber: null,
       field: "bundle",
       code: "schema_validation_failed",
-      message: parsed.error.message,
+      message: "Import data does not match the backup schema.",
     });
   return { bundle, errors, warnings };
 };
@@ -1660,55 +1700,176 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   return bundle;
 };
 
-export const importJsonBackup = (text) =>
-  upgradeBackupBundlePreservingLifecyclePrecision(
-    normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
-  );
-export const importNdjsonBackup = (text) => {
-  const bundle = {
-    schemaVersion: 1,
-    exportedAt: nowIso(),
-    applications: [],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents: [],
-    interviews: [],
-    offers: [],
-    artifacts: [],
-    reminders: [],
-  };
-  String(text)
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .forEach((line) => {
-      const entry = JSON.parse(line);
-      if (!entry || typeof entry !== "object" || typeof entry.type !== "string")
-        throw new Error(
-          "Unknown or malformed NDJSON record type: missing type",
-        );
-      if (entry.type === "meta")
-        Object.assign(bundle, {
-          schemaVersion: entry.schemaVersion,
-          exportedAt: entry.exportedAt,
-        });
-      else if (entry.type === "settings") bundle.settings = entry.record;
-      else if (ARRAY_STORE_SET.has(entry.type))
-        bundle[entry.type].push(entry.record);
-      else
-        throw new Error(
-          `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
-        );
-    });
-  return upgradeBackupBundlePreservingLifecyclePrecision(
-    normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
-  );
+const admitBackup = (input, source, locations) => {
+  assertImportCandidateBudget(input);
+  let bundle;
+  try {
+    bundle = upgradeBackupBundlePreservingLifecyclePrecision(
+      normalizeBackupBundleInput(input, { source }),
+    );
+  } catch {
+    throw new ImportAdmissionError();
+  }
+  assertImportCandidateBudget(bundle);
+  const result = collectImportContactIssues(bundle, { locations });
+  if (result.issues.length || result.truncated) {
+    throw new ImportAdmissionError(
+      "import_ownership_failed",
+      result.issues,
+      result.truncated,
+    );
+  }
+  return bundle;
 };
-export const previewCompactCsvImport = async (csvText, repository) => {
+export const importJsonBackup = (text) => {
+  assertImportTextBudget(text, "json");
+  let input;
+  try {
+    input = JSON.parse(text);
+  } catch {
+    throw new ImportAdmissionError();
+  }
+  return admitBackup(input, "json_import");
+};
+export const importNdjsonBackup = (text) => {
+  assertImportTextBudget(text, "ndjson");
+  const bundle = Object.fromEntries(ARRAY_STORES.map((store) => [store, []]));
+  const locations = Object.fromEntries(
+    ARRAY_STORES.map((store) => [store, []]),
+  );
+  const seen = new Set();
+  const work = { units: 0 };
+  for (const { line, sourceLine } of importNdjsonLines(text)) {
+    const rejectLine = () => {
+      throw new ImportAdmissionError("import_admission_failed", [
+        {
+          code: "import_admission_failed",
+          origin: "incoming",
+          sourceLine,
+          repairHint:
+            "Repair this line in a copy of the backup and preview again.",
+        },
+      ]);
+    };
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      rejectLine();
+    }
+    try {
+      assertImportObjectBudget(entry, work);
+    } catch {
+      rejectLine();
+    }
+    if (!entry || typeof entry !== "object") rejectLine();
+    if (entry.type === "meta" || entry.type === "settings") {
+      if (seen.has(entry.type)) rejectLine();
+      seen.add(entry.type);
+      if (entry.type === "meta") {
+        bundle.schemaVersion = entry.schemaVersion;
+        bundle.exportedAt = entry.exportedAt;
+      } else bundle.settings = entry.record;
+    } else if (ARRAY_STORE_SET.has(entry.type)) {
+      locations[entry.type].push({
+        origin: "incoming",
+        recordIndex: bundle[entry.type].length,
+        sourceLine,
+      });
+      bundle[entry.type].push(entry.record);
+    } else rejectLine();
+  }
+  return admitBackup(bundle, "ndjson_import", locations);
+};
+const boundPreviewDiagnostics = (preview) => {
+  let remaining = IMPORT_LIMITS_V1.issues;
+  let truncated = preview.truncated ?? false;
+  const fields = new Set([
+    ...COMPACT_CSV_COLUMNS,
+    ...LIFECYCLE_CSV_COLUMNS,
+    "id",
+    "bundle",
+    "contactId",
+    "contactIds",
+  ]);
+  for (const key of ["errors", "conflicts", "warnings"]) {
+    const items = preview[key] ?? [];
+    if (items.length > remaining) truncated = true;
+    preview[key] = items.slice(0, remaining).map((issue) => ({
+      code: issue.code,
+      rowNumber: Number.isInteger(issue.rowNumber) ? issue.rowNumber : null,
+      ...(fields.has(issue.field) ? { field: issue.field } : {}),
+      ...(ARRAY_STORE_SET.has(issue.store) ? { store: issue.store } : {}),
+      ...(Number.isInteger(issue.recordIndex)
+        ? { recordIndex: issue.recordIndex }
+        : {}),
+      ...(Number.isInteger(issue.referenceIndex)
+        ? { referenceIndex: issue.referenceIndex }
+        : {}),
+      ...(Number.isInteger(issue.sourceLine)
+        ? { sourceLine: issue.sourceLine }
+        : {}),
+      origin: issue.origin === "existing" ? "existing" : "incoming",
+      repairHint:
+        "Keep the original backup. Repair a copy and preview it again.",
+    }));
+    remaining -= preview[key].length;
+  }
+  return { ...preview, truncated };
+};
+const safePreview = async (run) => {
+  try {
+    return boundPreviewDiagnostics(await run());
+  } catch (error) {
+    if (!(error instanceof ImportAdmissionError)) throw error;
+    return boundPreviewDiagnostics({
+      bundle: null,
+      rowCount: 0,
+      validRowCount: 0,
+      conflicts: [],
+      warnings: [],
+      errors: error.issues.length ? error.issues : [{ code: error.code }],
+      truncated: error.truncated,
+    });
+  }
+};
+const assertPreviewCandidate = (existing, incoming) => {
+  const merged = { ...existing };
+  const locations = {};
+  for (const store of ARRAY_STORES) {
+    const records = new Map(
+      (existing[store] ?? []).map((record, recordIndex) => [
+        record.id,
+        { record, location: { origin: "existing", recordIndex } },
+      ]),
+    );
+    (incoming[store] ?? []).forEach((record, recordIndex) =>
+      records.set(record.id, {
+        record,
+        location: { origin: "incoming", recordIndex },
+      }),
+    );
+    merged[store] = [...records.values()].map((entry) => entry.record);
+    locations[store] = [...records.values()].map((entry) => entry.location);
+  }
+  assertImportCandidateBudget(merged);
+  const result = collectImportContactIssues(merged, { locations });
+  if (result.issues.length || result.truncated) {
+    throw new ImportAdmissionError(
+      "import_ownership_failed",
+      result.issues,
+      result.truncated,
+    );
+  }
+};
+const previewCompactCsvImportUnchecked = async (csvText, repository) => {
   const rows = parseCsv(csvText);
-  const { bundle, errors, warnings } = rowsToBrowserApplicationExport(rows);
+  const { bundle, errors, warnings } =
+    rowsToBrowserApplicationExportUnchecked(rows);
   const existing = repository
     ? await repository.exportAllData()
     : { applications: [] };
+  assertImportCandidateBudget(existing);
   const incomingIds = new Map();
   const incomingUrls = new Map();
   const conflicts = [];
@@ -1766,6 +1927,7 @@ export const previewCompactCsvImport = async (csvText, repository) => {
       return true;
     });
   }
+  if (!errors.length) assertPreviewCandidate(existing, bundle);
   const blockingErrors = conflicts.some(
     (conflict) => conflict.code === "duplicate_in_file",
   )
@@ -1944,16 +2106,14 @@ export const planSupplementalLifecycleImport = (existing, incomingBundle) => {
   return { merged, recordsByStore };
 };
 
-export const previewSupplementalLifecycleCsvImport = async (
+const previewSupplementalLifecycleCsvImportUnchecked = async (
   csvText,
   repository,
 ) => {
   const rows = parseCsv(csvText);
   const existing = await repository.exportAllData();
-  const { bundle, errors, warnings } = csvToSupplementalLifecycleExport(
-    csvText,
-    existing,
-  );
+  const { bundle, errors, warnings } =
+    lifecycleRowsToBrowserApplicationExportUnchecked(rows, existing);
   const incomingStores = ["lifecycleEvents", "interviews", "reminders"];
   const rowNumberByEventId = new Map(
     rows.map((row, index) => [
@@ -2003,6 +2163,8 @@ export const previewSupplementalLifecycleCsvImport = async (
     bundle[store] = deduped;
   }
   const plan = planSupplementalLifecycleImport(existing, bundle);
+  if (!errors.length && !conflicts.length)
+    assertPreviewCandidate(existing, plan.recordsByStore);
   return {
     kind: "lifecycle_csv",
     rowCount: rows.length,
@@ -2035,3 +2197,23 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
     }),
   };
 };
+
+export const previewCompactCsvImport = (csvText, repository) =>
+  safePreview(() => previewCompactCsvImportUnchecked(csvText, repository));
+export const previewSupplementalLifecycleCsvImport = (csvText, repository) =>
+  safePreview(() =>
+    previewSupplementalLifecycleCsvImportUnchecked(csvText, repository),
+  );
+
+export const rowsToBrowserApplicationExport = (rows, options) =>
+  boundPreviewDiagnostics(
+    rowsToBrowserApplicationExportUnchecked(rows, options),
+  );
+export const lifecycleRowsToBrowserApplicationExport = (
+  rows,
+  existing,
+  options,
+) =>
+  boundPreviewDiagnostics(
+    lifecycleRowsToBrowserApplicationExportUnchecked(rows, existing, options),
+  );
