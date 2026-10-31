@@ -105,10 +105,6 @@ export async function fetchAshbyJobs(
     bodyKind: "list",
     retry,
     rateLimit: { key: `ashby:${slug}` },
-    onError: ({ response }) =>
-      new Error(
-        `Failed to fetch Ashby org ${slug}: ${response.status} ${response.statusText}`,
-      ),
   });
   const jobPostings = Array.isArray(payload?.jobPostings)
     ? payload.jobPostings

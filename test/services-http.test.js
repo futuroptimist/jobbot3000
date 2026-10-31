@@ -125,6 +125,62 @@ describe("createHttpClient", () => {
     expect((await pending).code).toBe("DEADLINE");
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("applies reduced request limits before the client default timeout", async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation(() => new Promise(() => {}));
+    const client = createHttpClient();
+    let outcome;
+    const pending = client
+      .request("https://example.test", {
+        limits: { requestMs: 20 },
+      })
+      .catch((error) => {
+        outcome = error;
+        return error;
+      });
+    await vi.advanceTimersByTimeAsync(19);
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    const codeAtDeadline = outcome?.code;
+    await vi.advanceTimersByTimeAsync(10000);
+    await pending;
+    expect(codeAtDeadline).toBe("DEADLINE");
+    expect(fetch.mock.lastCall[1].signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("spaces overlapping same-origin requests after the previous body completes", async () => {
+    vi.useFakeTimers();
+    const started = [];
+    let finishBody;
+    const body = new Promise((resolve) => {
+      finishBody = resolve;
+    });
+    fetch
+      .mockImplementationOnce(() => {
+        started.push(Date.now());
+        return { text: () => body };
+      })
+      .mockImplementationOnce(() => {
+        started.push(Date.now());
+        return { body: "second" };
+      });
+    const client = createHttpClient({ defaultRateLimitMs: 200 });
+    const first = client.get("https://example.test/first");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const second = client.get("https://example.test/second");
+    await vi.advanceTimersByTimeAsync(50);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    finishBody("first");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await (await first).text()).toBe("first");
+    await vi.advanceTimersByTimeAsync(199);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await (await second).text()).toBe("second");
+    expect(started[1] - started[0]).toBe(250);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("provides GET and JSON helpers with bounded parse errors", async () => {
     fetch
       .mockResolvedValueOnce({ body: '{"ok":true}' })

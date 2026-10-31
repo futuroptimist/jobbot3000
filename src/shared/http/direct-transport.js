@@ -103,7 +103,12 @@ const origins = new Map();
 const rates = new Map();
 export function setTransportRate(key, interval, last) {
   if (!interval) rates.delete(key);
-  else rates.set(key, { interval, last: last ?? rates.get(key)?.last });
+  else {
+    const state = rates.get(key) ?? {};
+    state.interval = interval;
+    if (last !== undefined && last !== null) state.last = last;
+    rates.set(key, state);
+  }
 }
 export function clearTransportRates() {
   rates.clear();
@@ -589,9 +594,13 @@ export function createPublicTransport({
     ) {
       throw new IngestionError("URL_POLICY", "Invalid retry configuration");
     }
+    const timeoutMs =
+      options.timeoutMs === undefined
+        ? limits.requestMs
+        : limitsFor({ requestMs: options.timeoutMs }, budget.limits).requestMs;
     const owner = createRequestOwner(
       budget,
-      options.timeoutMs === undefined ? limits.requestMs : options.timeoutMs,
+      Math.min(limits.requestMs, timeoutMs),
       options.signal,
     );
     let releaseGlobal;

@@ -227,12 +227,6 @@ export async function fetchWorkableJobs(
     retry,
     headers: requestHeaders,
     rateLimit: { key: `workable:${slug}` },
-    onError: ({ response }) => {
-      const statusLabel = `${response.status} ${response.statusText}`;
-      return new Error(
-        `Failed to fetch Workable account ${slug}: ${statusLabel}`,
-      );
-    },
   });
   const jobsArray = Array.isArray(payload?.jobs)
     ? payload.jobs
@@ -266,12 +260,6 @@ async function toWorkableSnapshot(job, context) {
     headers,
     retry,
     rateLimit: { key: rateLimitKey },
-    onError: ({ response }) => {
-      const statusLabel = `${response.status} ${response.statusText}`;
-      return new Error(
-        `Failed to fetch Workable job ${shortcode}: ${statusLabel}`,
-      );
-    },
   });
   const raw = gatherDetailText(detail, job);
   const parsed = mergeParsedJob(parseJobText(raw), job, detail);

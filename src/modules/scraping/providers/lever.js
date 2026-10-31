@@ -80,10 +80,6 @@ export async function fetchLeverJobs(
     bodyKind: "list",
     retry,
     rateLimit: { key: `lever:${slug}` },
-    onError: ({ response }) =>
-      new Error(
-        `Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`,
-      ),
   });
   budget.charge("jobs", Array.isArray(jobs) ? jobs.length : 0);
   return { slug, jobs: Array.isArray(jobs) ? jobs : [] };

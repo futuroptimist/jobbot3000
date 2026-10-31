@@ -340,6 +340,37 @@ describe("direct transport without real networking", () => {
       expect(vi.getTimerCount()).toBe(0);
     },
   );
+  it.each([
+    { requestMs: 20, timeoutMs: 100, expectedMs: 20 },
+    { requestMs: 100, timeoutMs: 20, expectedMs: 20 },
+  ])(
+    "uses the earliest request bound: %j",
+    async ({ requestMs, timeoutMs, expectedMs }) => {
+      vi.useFakeTimers();
+      const stream = new Readable({ read() {} });
+      const h = harness({ reply: () => ({ stream }) });
+      let outcome;
+      const pending = h
+        .run("http://example.test", {
+          limits: { requestMs },
+          timeoutMs,
+        })
+        .catch((error) => {
+          outcome = error;
+          return error;
+        });
+      await vi.advanceTimersByTimeAsync(expectedMs - 1);
+      expect(outcome).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      const codeAtDeadline = outcome?.code;
+      await vi.advanceTimersByTimeAsync(10000);
+      await pending;
+      expect(codeAtDeadline).toBe("DEADLINE");
+      expect(stream.destroyed).toBe(true);
+      expect(h.sockets.every((socket) => socket.destroyed)).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it("the absolute deadline stops endless slow trickles", async () => {
     vi.useFakeTimers();
     const stream = new Readable({ read() {} });

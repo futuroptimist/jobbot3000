@@ -140,12 +140,6 @@ export async function fetchSmartRecruitersPostings(
         bodyKind: "list",
         retry,
         rateLimit: { key: rateLimitKey },
-        onError: ({ response }) => {
-          const statusLabel = `${response.status} ${response.statusText}`;
-          return new Error(
-            `Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`,
-          );
-        },
       });
       const items = Array.isArray(payload?.content) ? payload.content : [];
       const totalFound =
@@ -183,13 +177,6 @@ async function toSmartRecruitersSnapshot(posting, context) {
     budget,
     retry,
     rateLimit: { key: rateLimitKey },
-    onError: ({ response }) => {
-      const statusLabel = `${response.status} ${response.statusText}`;
-      const postingId = posting?.id ?? "";
-      return new Error(
-        `Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`,
-      );
-    },
   });
   const sectionsText = extractSectionsText(detail);
   const raw = sectionsText || toPlainText(detail?.jobAd?.text) || "";
