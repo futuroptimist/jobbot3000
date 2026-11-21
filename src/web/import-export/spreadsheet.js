@@ -1833,6 +1833,17 @@ const safePreview = async (run) => {
     });
   }
 };
+const assertImportCandidate = (candidate, locations) => {
+  assertImportCandidateBudget(candidate);
+  const result = collectImportContactIssues(candidate, { locations });
+  if (result.issues.length || result.truncated) {
+    throw new ImportAdmissionError(
+      "import_ownership_failed",
+      result.issues,
+      result.truncated,
+    );
+  }
+};
 const assertPreviewCandidate = (existing, incoming) => {
   const merged = { ...existing };
   const locations = {};
@@ -1852,17 +1863,9 @@ const assertPreviewCandidate = (existing, incoming) => {
     merged[store] = [...records.values()].map((entry) => entry.record);
     locations[store] = [...records.values()].map((entry) => entry.location);
   }
-  assertImportCandidateBudget(merged);
-  const result = collectImportContactIssues(merged, { locations });
-  if (result.issues.length || result.truncated) {
-    throw new ImportAdmissionError(
-      "import_ownership_failed",
-      result.issues,
-      result.truncated,
-    );
-  }
+  assertImportCandidate(merged, locations);
 };
-const previewCompactCsvImportUnchecked = async (csvText, repository) => {
+const previewCompactCsvImportUnchecked = async (csvText, repository, mode) => {
   const rows = parseCsv(csvText);
   const { bundle, errors, warnings } =
     rowsToBrowserApplicationExportUnchecked(rows);
@@ -1927,12 +1930,20 @@ const previewCompactCsvImportUnchecked = async (csvText, repository) => {
       return true;
     });
   }
-  if (!errors.length) assertPreviewCandidate(existing, bundle);
   const blockingErrors = conflicts.some(
     (conflict) => conflict.code === "duplicate_in_file",
   )
     ? errors.filter((error) => error.code !== "schema_validation_failed")
     : errors;
+  let candidate;
+  if (mode === undefined) {
+    // The tracker preview still applies a partial overlay using record IDs.
+    if (!errors.length) assertPreviewCandidate(existing, bundle);
+  } else if (!blockingErrors.length) {
+    // The explicit import API validates the exact bundle it will write.
+    candidate = compactCsvCandidateForMode(existing, bundle, mode);
+    assertImportCandidate(candidate);
+  }
   return {
     rowCount: rows.length,
     validRowCount: Math.max(
@@ -1948,6 +1959,7 @@ const previewCompactCsvImportUnchecked = async (csvText, repository) => {
     conflicts,
     warnings,
     bundle,
+    ...(candidate ? { candidate } : {}),
   };
 };
 export const importCompactCsv = async (
@@ -1955,17 +1967,20 @@ export const importCompactCsv = async (
   repository,
   { mode = "skip" } = {},
 ) => {
-  const preview = await previewCompactCsvImport(csvText, repository);
-  if (preview.errors.length > 0) return { imported: false, preview };
-  if (mode === "replace")
-    return {
-      imported: true,
-      preview,
-      result: await repository.importAllData(preview.bundle, {
-        allowOverwrite: true,
-      }),
-    };
-  const existing = await repository.exportAllData();
+  const { candidate, ...preview } = await safePreview(() =>
+    previewCompactCsvImportUnchecked(csvText, repository, mode),
+  );
+  if (!candidate || preview.errors.length > 0)
+    return { imported: false, preview };
+  return {
+    imported: true,
+    preview,
+    result: await repository.importAllData(candidate, { allowOverwrite: true }),
+  };
+};
+
+const compactCsvCandidateForMode = (existing, bundle, mode) => {
+  if (mode === "replace") return bundle;
   const existingIds = new Set(existing.applications.map(({ id }) => id));
   const existingUrls = new Set(
     existing.applications.map(({ postingUrl }) => postingUrl).filter(Boolean),
@@ -1990,7 +2005,7 @@ export const importCompactCsv = async (
       !existingUrls.has(application.postingUrl)
     );
   };
-  const keptApplications = preview.bundle.applications.filter(keep);
+  const keptApplications = bundle.applications.filter(keep);
   const incomingIds = new Set(keptApplications.map(({ id }) => id));
   const merged = { ...existing, exportedAt: nowIso() };
   for (const store of [
@@ -2003,7 +2018,7 @@ export const importCompactCsv = async (
     "artifacts",
     "reminders",
   ]) {
-    const incoming = preview.bundle[store]
+    const incoming = bundle[store]
       .filter((record) => incomingIds.has(record.applicationId ?? record.id))
       .map((record) => {
         const sourceApplicationId = record.applicationId ?? record.id;
@@ -2026,11 +2041,7 @@ export const importCompactCsv = async (
           ]
         : [...existing[store], ...incoming];
   }
-  return {
-    imported: true,
-    preview,
-    result: await repository.importAllData(merged, { allowOverwrite: true }),
-  };
+  return merged;
 };
 
 // Import provenance and precision flags are intentionally ignored only for

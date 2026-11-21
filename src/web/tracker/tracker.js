@@ -1381,7 +1381,10 @@ const IMPORT_ISSUE_CODES = new Set([
   "origin_structured_evidence_conflict",
 ]);
 function formatIssue(issue) {
-  const store = IMPORT_STORES.includes(issue.store) ? issue.store : "Import";
+  const store =
+    [issue.store, issue.storeName].find((name) =>
+      IMPORT_STORES.includes(name),
+    ) ?? "Import";
   const where = Number.isInteger(issue.recordIndex)
     ? `${issue.origin === "existing" ? "Existing " : ""}${store} row ${issue.recordIndex + 1}`
     : Number.isInteger(issue.sourceLine)

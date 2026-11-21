@@ -2994,6 +2994,50 @@ describe("spreadsheet import/export", () => {
     );
   });
 
+  it.each(["replace", "merge", "skip"])(
+    "admits valid %s CSV imports at the existing application limit",
+    async (mode) => {
+      const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+      const row = (index) => ({
+        application_id: `app_fixture_${index}`,
+        company: "Example Robotics",
+        role_title: "Engineer",
+        status: "applied",
+        applied_at: "2026-01-01",
+        posting_url: `https://jobs.example.test/role/${index}`,
+        schema_version: "1",
+      });
+      const initialCsv = serializeCsv(
+        Array.from({ length: 1000 }, (_, index) => row(index)),
+      );
+      const initial = await importCompactCsv(initialCsv, repo, {
+        mode: "replace",
+      });
+      expect(initial.imported).toBe(true);
+
+      const incoming = {
+        ...row(mode === "replace" ? 1000 : 0),
+        application_id: "app_fixture_new",
+        role_title: "Revised Engineer",
+      };
+      const result = await importCompactCsv(serializeCsv([incoming]), repo, {
+        mode,
+      });
+
+      expect(result.imported).toBe(true);
+      expect(result.preview.errors).toEqual([]);
+      const { applications } = await repo.exportAllData();
+      expect(applications).toHaveLength(mode === "replace" ? 1 : 1000);
+      expect(applications).toContainEqual(
+        expect.objectContaining({
+          id: mode === "replace" ? "app_fixture_new" : "app_fixture_0",
+          role: mode === "skip" ? "Engineer" : "Revised Engineer",
+        }),
+      );
+      repo.close();
+    },
+  );
+
   it("merges applications by posting URL when incoming ids differ", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const originalCsv = serializeCsv([

@@ -2,6 +2,10 @@
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  serializeCsv,
+  csvToBrowserApplicationExport,
+} from "../src/web/import-export/spreadsheet.js";
 import { IMPORT_LIMITS_V1 } from "../src/web/import-export/importAdmission.js";
 
 const empty = () => ({
@@ -147,6 +151,32 @@ describe("tracker import preview admission", () => {
     expect(apply().disabled).toBe(false);
     read.reject(new Error("SYNTHETIC_PRIVATE_CANARY"));
     await pending;
+    expect(apply().disabled).toBe(false);
+  });
+  it("shows the store name for a matching local application without its ID", async () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_example_private_identifier",
+        company: "Example Robotics",
+        role_title: "Engineer",
+        status: "applied",
+        applied_at: "2026-01-01",
+        posting_url: "https://jobs.example.test/role",
+        schema_version: "1",
+      },
+    ]);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv);
+    expect(errors).toEqual([]);
+    repository.listRecords = vi.fn(async (storeName) =>
+      storeName === "applications" ? bundle.applications : [],
+    );
+
+    select(file(JSON.stringify(bundle)));
+    await preview();
+
+    const text = $("[data-import-result]").textContent;
+    expect(text).toContain("Conflictsapplications:");
+    expect(text).not.toContain("app_example_private_identifier");
     expect(apply().disabled).toBe(false);
   });
   it("renders ownership positions without imported values", async () => {
