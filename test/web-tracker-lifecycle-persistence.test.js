@@ -217,7 +217,7 @@ describe("atomic lifecycle persistence", () => {
           }),
         ],
       }),
-    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    ).rejects.toMatchObject({ code: "import_admission_failed" });
 
     const exported = await repo.exportAllData();
     expect(exported.lifecycleEvents.map((item) => item.id).sort()).toEqual([

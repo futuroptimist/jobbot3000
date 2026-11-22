@@ -644,7 +644,7 @@ describe("IndexedDB repository", () => {
           },
         ],
       }),
-    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    ).rejects.toMatchObject({ code: "import_admission_failed" });
 
     expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(0);
 

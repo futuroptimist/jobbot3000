@@ -597,7 +597,7 @@ test.describe("browser application tracker", () => {
     await expect(preview).toContainText("duplicate_in_file");
     await expect(preview).toContainText("application_id");
     await expect(preview).toContainText("ignored_non_interview_stage");
-    await expect(preview).toContainText("written_assessment_submitted");
+    await expect(preview).not.toContainText("written_assessment_submitted");
     await expect(
       page.getByRole("button", { name: "Apply import" }),
     ).toBeEnabled();
@@ -638,7 +638,7 @@ test.describe("browser application tracker", () => {
 
     const preview = page.locator("[data-import-result]");
     await expect(preview).toContainText("unsupported_event_type");
-    await expect(preview).toContainText("bespoke_vendor_ping");
+    await expect(preview).not.toContainText("bespoke_vendor_ping");
     await expect(preview).toContainText("malformed_date");
     await expect(preview).toContainText("unknown_application");
     await expect(
